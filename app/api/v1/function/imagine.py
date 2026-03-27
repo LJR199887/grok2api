@@ -37,34 +37,6 @@ async def _clean_sessions(now: float) -> None:
         _IMAGINE_SESSIONS.pop(key, None)
 
 
-def _parse_sse_chunk(chunk: str) -> Optional[Dict[str, Any]]:
-    if not chunk:
-        return None
-    event = None
-    data_lines: List[str] = []
-    for raw in str(chunk).splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("event:"):
-            event = line[6:].strip()
-            continue
-        if line.startswith("data:"):
-            data_lines.append(line[5:].strip())
-    if not data_lines:
-        return None
-    data_str = "\n".join(data_lines)
-    if data_str == "[DONE]":
-        return None
-    try:
-        payload = orjson.loads(data_str)
-    except orjson.JSONDecodeError:
-        return None
-    if event and isinstance(payload, dict) and "type" not in payload:
-        payload["type"] = event
-    return payload
-
-
 async def _new_session(prompt: str, aspect_ratio: str, nsfw: Optional[bool]) -> str:
     task_id = uuid.uuid4().hex
     now = time.time()
@@ -186,8 +158,10 @@ async def function_imagine_ws(websocket: WebSocket):
             }
         )
 
+        sequence = 0
         while not stop_event.is_set():
             try:
+                started_at = time.perf_counter()
                 await token_mgr.reload_if_stale()
                 token = None
                 for pool_name in ModelService.pool_candidates_for_model(
@@ -213,42 +187,37 @@ async def function_imagine_ws(websocket: WebSocket):
                     token=token,
                     model_info=model_info,
                     prompt=prompt,
-                    n=6,
+                    n=1,
                     response_format="b64_json",
                     size="1024x1024",
                     aspect_ratio=aspect_ratio,
-                    stream=True,
+                    stream=False,
                     enable_nsfw=nsfw,
                 )
-                if result.stream:
-                    async for chunk in result.data:
-                        payload = _parse_sse_chunk(chunk)
-                        if not payload:
-                            continue
-                        if isinstance(payload, dict):
-                            payload.setdefault("run_id", run_id)
-                        await _send(payload)
-                else:
-                    images = [img for img in result.data if img and img != "error"]
-                    if images:
-                        for img_b64 in images:
-                            await _send(
-                                {
-                                    "type": "image",
-                                    "b64_json": img_b64,
-                                    "created_at": int(time.time() * 1000),
-                                    "aspect_ratio": aspect_ratio,
-                                    "run_id": run_id,
-                                }
-                            )
-                    else:
+                images = [img for img in result.data if img and img != "error"]
+                if images:
+                    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                    for img_b64 in images:
+                        sequence += 1
                         await _send(
                             {
-                                "type": "error",
-                                "message": "Image generation returned empty data.",
-                                "code": "empty_image",
+                                "type": "image",
+                                "b64_json": img_b64,
+                                "sequence": sequence,
+                                "created_at": int(time.time() * 1000),
+                                "elapsed_ms": elapsed_ms,
+                                "aspect_ratio": aspect_ratio,
+                                "run_id": run_id,
                             }
                         )
+                else:
+                    await _send(
+                        {
+                            "type": "error",
+                            "message": "Image generation returned empty data.",
+                            "code": "empty_image",
+                        }
+                    )
 
             except asyncio.CancelledError:
                 break
@@ -388,6 +357,7 @@ async def function_imagine_sse(
                 f"data: {orjson.dumps({'type': 'status', 'status': 'running', 'prompt': prompt, 'aspect_ratio': ratio, 'run_id': run_id}).decode()}\n\n"
             )
 
+            sequence = 0
             while True:
                 if await request.is_disconnected():
                     break
@@ -397,6 +367,7 @@ async def function_imagine_sse(
                         break
 
                 try:
+                    started_at = time.perf_counter()
                     await token_mgr.reload_if_stale()
                     token = None
                     for pool_name in ModelService.pool_candidates_for_model(
@@ -418,39 +389,32 @@ async def function_imagine_sse(
                         token=token,
                         model_info=model_info,
                         prompt=prompt,
-                        n=6,
+                        n=1,
                         response_format="b64_json",
                         size="1024x1024",
                         aspect_ratio=ratio,
-                        stream=True,
+                        stream=False,
                         enable_nsfw=nsfw,
                     )
-                    if result.stream:
-                        async for chunk in result.data:
-                            payload = _parse_sse_chunk(chunk)
-                            if not payload:
-                                continue
-                            if isinstance(payload, dict):
-                                payload.setdefault("run_id", run_id)
+                    images = [img for img in result.data if img and img != "error"]
+                    if images:
+                        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                        for img_b64 in images:
+                            sequence += 1
+                            payload = {
+                                "type": "image",
+                                "b64_json": img_b64,
+                                "sequence": sequence,
+                                "created_at": int(time.time() * 1000),
+                                "elapsed_ms": elapsed_ms,
+                                "aspect_ratio": ratio,
+                                "run_id": run_id,
+                            }
                             yield f"data: {orjson.dumps(payload).decode()}\n\n"
                     else:
-                        images = [img for img in result.data if img and img != "error"]
-                        if images:
-                            for img_b64 in images:
-                                sequence += 1
-                                payload = {
-                                    "type": "image",
-                                    "b64_json": img_b64,
-                                    "sequence": sequence,
-                                    "created_at": int(time.time() * 1000),
-                                    "aspect_ratio": ratio,
-                                    "run_id": run_id,
-                                }
-                                yield f"data: {orjson.dumps(payload).decode()}\n\n"
-                        else:
-                            yield (
-                                f"data: {orjson.dumps({'type': 'error', 'message': 'Image generation returned empty data.', 'code': 'empty_image'}).decode()}\n\n"
-                            )
+                        yield (
+                            f"data: {orjson.dumps({'type': 'error', 'message': 'Image generation returned empty data.', 'code': 'empty_image'}).decode()}\n\n"
+                        )
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
