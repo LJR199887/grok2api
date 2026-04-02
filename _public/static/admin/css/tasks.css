@@ -10,16 +10,34 @@
   color: var(--accents-7);
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
 }
 
-.stat-card {
+.stat-card,
+.daily-card,
+.filter-shell,
+.table-shell {
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 14px;
+}
+
+.stat-card {
   padding: 16px;
 }
 
@@ -36,10 +54,55 @@
   color: var(--accents-4);
 }
 
-.table-shell {
-  background: #fff;
+.filter-shell {
+  padding: 14px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accents-5);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  background: #fff;
+  color: var(--accents-6);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.filter-chip:hover {
+  border-color: #000;
+  color: #000;
+}
+
+.filter-chip.active {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+
+.table-shell {
   overflow: hidden;
 }
 
@@ -89,4 +152,58 @@
 .mono-cell {
   font-family: "Geist Mono", monospace;
   font-size: 12px;
+}
+
+.daily-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+
+.daily-card {
+  padding: 16px;
+}
+
+.daily-date {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accents-7);
+}
+
+.daily-total {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accents-8);
+}
+
+.daily-total-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accents-4);
+}
+
+.daily-breakdown {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.daily-metric {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.daily-metric-title {
+  font-size: 12px;
+  color: var(--accents-5);
+}
+
+.daily-metric-value {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accents-8);
 }

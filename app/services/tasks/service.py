@@ -85,9 +85,9 @@ class MediaTaskService:
         midnight = datetime(now.year, now.month, now.day)
         start_day = midnight - timedelta(days=6)
         start_ms = int(start_day.timestamp() * 1000)
-        today_key = now.strftime("%Y-%m-%d")
+        all_tasks = await self.storage.list_media_tasks(limit=2000)
+        task_list = list(all_tasks[:200])
 
-        active_tasks = await self.storage.list_media_tasks(statuses=["running"])
         recent_tasks = await self.storage.list_media_tasks(since=start_ms)
 
         daily_lookup: Dict[str, Dict[str, Any]] = {}
@@ -110,20 +110,30 @@ class MediaTaskService:
                 continue
             bucket[task_type][status] += 1
 
-        summary_today = daily_lookup.get(today_key, self._empty_day(today_key))
-
+        summary_total = self._summarize(all_tasks)
         active_payload = []
         now_ms = int(time.time() * 1000)
-        for task in active_tasks:
+        for task in task_list:
             item = dict(task)
             item["duration_ms"] = max(0, now_ms - int(item.get("created_at") or now_ms))
-            active_payload.append(item)
+            if item.get("status") == "running":
+                active_payload.append(dict(item))
 
         return {
             "server_now": now_ms,
             "active_tasks": active_payload,
+            "task_list": [
+                {
+                    **dict(task),
+                    "duration_ms": max(
+                        0,
+                        now_ms - int(task.get("created_at") or now_ms),
+                    ),
+                }
+                for task in task_list
+            ],
             "daily_stats": [daily_lookup[key] for key in sorted(daily_lookup.keys())],
-            "summary_today": summary_today,
+            "summary_total": summary_total,
         }
 
     async def _get_updated_record(
@@ -157,6 +167,20 @@ class MediaTaskService:
             "image": {"running": 0, "success": 0, "failure": 0},
             "video": {"running": 0, "success": 0, "failure": 0},
         }
+
+    def _summarize(self, tasks: list[Dict[str, Any]]) -> Dict[str, Any]:
+        summary = {
+            "total": 0,
+            "image": {"running": 0, "success": 0, "failure": 0},
+            "video": {"running": 0, "success": 0, "failure": 0},
+        }
+        for task in tasks:
+            summary["total"] += 1
+            task_type = "video" if task.get("task_type") == "video" else "image"
+            status = str(task.get("status") or "")
+            if status in ("running", "success", "failure"):
+                summary[task_type][status] += 1
+        return summary
 
     def _stringify_error(self, error: Any) -> str:
         if error is None:

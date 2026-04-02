@@ -1,5 +1,9 @@
 let apiKey = '';
 let pollTimer = null;
+let loading = false;
+let currentTypeFilter = 'all';
+let currentStatusFilter = 'all';
+let currentTasks = [];
 
 const byId = (id) => document.getElementById(id);
 
@@ -14,7 +18,8 @@ const FALLBACK_TEXT = {
   'tasks.sourceChat': 'Chat Completions',
   'tasks.sourceFunctionImagine': 'Imagine Function',
   'tasks.sourceFunctionVideo': 'Video Function',
-  'tasks.noActiveTasks': 'No running tasks right now.'
+  'tasks.noTasks': 'No matching tasks right now.',
+  'tasks.totalTasks': 'Total Tasks'
 };
 
 function tt(key) {
@@ -66,7 +71,14 @@ function setText(id, value) {
   if (element) element.textContent = value;
 }
 
-function renderSummary(summary, activeCount) {
+function setButtonLoading(isLoading) {
+  const btn = byId('manual-refresh-btn');
+  if (!btn) return;
+  btn.disabled = isLoading;
+  btn.classList.toggle('opacity-60', isLoading);
+}
+
+function renderSummary(summary) {
   const image = summary.image || {};
   const video = summary.video || {};
   setText('summary-total', String(summary.total || 0));
@@ -76,18 +88,27 @@ function renderSummary(summary, activeCount) {
   setText('summary-video-running', String(video.running || 0));
   setText('summary-video-success', String(video.success || 0));
   setText('summary-video-failure', String(video.failure || 0));
-  setText('active-count', String(activeCount || 0));
+  setText('active-count', String((image.running || 0) + (video.running || 0)));
 }
 
-function renderActiveTasks(tasks) {
-  const body = byId('active-task-body');
-  const empty = byId('active-empty');
+function getFilteredTasks() {
+  return currentTasks.filter((task) => {
+    const matchesType = currentTypeFilter === 'all' || task.task_type === currentTypeFilter;
+    const matchesStatus = currentStatusFilter === 'all' || task.status === currentStatusFilter;
+    return matchesType && matchesStatus;
+  });
+}
+
+function renderTaskList() {
+  const body = byId('task-list-body');
+  const empty = byId('task-list-empty');
   if (!body || !empty) return;
 
+  const tasks = getFilteredTasks();
   if (!tasks.length) {
     body.innerHTML = '';
     empty.classList.remove('hidden');
-    empty.textContent = tt('tasks.noActiveTasks');
+    empty.textContent = tt('tasks.noTasks');
     return;
   }
 
@@ -106,34 +127,75 @@ function renderActiveTasks(tasks) {
 }
 
 function renderDailyStats(stats) {
-  const body = byId('daily-stats-body');
-  if (!body) return;
-  body.innerHTML = stats.map(item => `
-    <tr>
-      <td class="mono-cell">${item.date}</td>
-      <td>${item.total || 0}</td>
-      <td>${item.image?.running || 0}</td>
-      <td>${item.image?.success || 0}</td>
-      <td>${item.image?.failure || 0}</td>
-      <td>${item.video?.running || 0}</td>
-      <td>${item.video?.success || 0}</td>
-      <td>${item.video?.failure || 0}</td>
-    </tr>
+  const grid = byId('daily-stats-grid');
+  if (!grid) return;
+  grid.innerHTML = stats.map(item => `
+    <article class="daily-card">
+      <div class="daily-date">${item.date}</div>
+      <div class="daily-total">${item.total || 0}</div>
+      <div class="daily-total-label">${tt('tasks.totalTasks')}</div>
+      <div class="daily-breakdown">
+        <div class="daily-metric">
+          <div class="daily-metric-title">${tt('tasks.imageRunning')}</div>
+          <div class="daily-metric-value">${item.image?.running || 0}</div>
+        </div>
+        <div class="daily-metric">
+          <div class="daily-metric-title">${tt('tasks.imageSuccess')}</div>
+          <div class="daily-metric-value">${item.image?.success || 0}</div>
+        </div>
+        <div class="daily-metric">
+          <div class="daily-metric-title">${tt('tasks.imageFailure')}</div>
+          <div class="daily-metric-value">${item.image?.failure || 0}</div>
+        </div>
+        <div class="daily-metric">
+          <div class="daily-metric-title">${tt('tasks.videoRunning')}</div>
+          <div class="daily-metric-value">${item.video?.running || 0}</div>
+        </div>
+        <div class="daily-metric">
+          <div class="daily-metric-title">${tt('tasks.videoSuccess')}</div>
+          <div class="daily-metric-value">${item.video?.success || 0}</div>
+        </div>
+        <div class="daily-metric">
+          <div class="daily-metric-title">${tt('tasks.videoFailure')}</div>
+          <div class="daily-metric-value">${item.video?.failure || 0}</div>
+        </div>
+      </div>
+    </article>
   `).join('');
 }
 
-async function loadTasks() {
+function setTypeFilter(value, button) {
+  currentTypeFilter = value;
+  document.querySelectorAll('[data-filter-group="type"]').forEach((item) => {
+    item.classList.toggle('active', item === button);
+  });
+  renderTaskList();
+}
+
+function setStatusFilter(value, button) {
+  currentStatusFilter = value;
+  document.querySelectorAll('[data-filter-group="status"]').forEach((item) => {
+    item.classList.toggle('active', item === button);
+  });
+  renderTaskList();
+}
+
+async function loadTasks(showNotice = false) {
+  if (loading) return;
+  loading = true;
+  setButtonLoading(true);
   try {
     const res = await fetch('/v1/admin/tasks', {
       headers: buildAuthHeaders(apiKey)
     });
     if (res.ok) {
       const data = await res.json();
-      const activeTasks = Array.isArray(data.active_tasks) ? data.active_tasks : [];
+      currentTasks = Array.isArray(data.task_list) ? data.task_list : [];
       const dailyStats = Array.isArray(data.daily_stats) ? data.daily_stats : [];
-      renderSummary(data.summary_today || {}, activeTasks.length);
-      renderActiveTasks(activeTasks);
+      renderSummary(data.summary_total || {});
+      renderTaskList();
       renderDailyStats(dailyStats);
+      if (showNotice) showToast(t('common.operationSuccess'), 'success');
       return;
     }
     if (res.status === 401) {
@@ -143,15 +205,18 @@ async function loadTasks() {
     throw new Error(`HTTP ${res.status}`);
   } catch (error) {
     showToast(t('common.loadError', { msg: error.message }), 'error');
+  } finally {
+    loading = false;
+    setButtonLoading(false);
   }
 }
 
 async function init() {
   apiKey = await ensureAdminKey();
   if (apiKey === null) return;
-  await loadTasks();
+  await loadTasks(false);
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(loadTasks, 10000);
+  pollTimer = setInterval(() => loadTasks(false), 10000);
 }
 
 window.addEventListener('beforeunload', () => {

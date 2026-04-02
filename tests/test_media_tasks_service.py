@@ -126,7 +126,9 @@ def test_media_task_dashboard_groups_last_seven_days():
 
     assert len(payload["daily_stats"]) == 7
     assert len(payload["active_tasks"]) == 1
+    assert len(payload["task_list"]) == 3
     assert payload["active_tasks"][0]["task_id"] == "running-image"
-    assert payload["summary_today"]["image"]["running"] == 1
+    assert payload["summary_total"]["image"]["running"] == 1
+    assert payload["summary_total"]["video"]["success"] == 1
     totals = {item["date"]: item for item in payload["daily_stats"]}
     assert sum(item["total"] for item in totals.values()) == 3

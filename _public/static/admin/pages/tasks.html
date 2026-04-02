@@ -23,11 +23,16 @@
       <div class="flex justify-between items-center gap-4 flex-wrap">
         <div>
           <h2 class="text-2xl font-semibold tracking-tight" data-i18n="tasks.title">任务管理</h2>
-          <p class="text-[var(--accents-4)] mt-1 text-sm" data-i18n="tasks.subtitle">查看图片和视频任务的运行状态与近 7 天统计。</p>
+          <p class="text-[var(--accents-4)] mt-1 text-sm" data-i18n="tasks.subtitle">查看图片和视频任务的运行状态与统计概览。</p>
         </div>
-        <div class="text-sm text-[var(--accents-4)]">
-          <span data-i18n="tasks.autoRefresh">自动刷新</span>
-          <span id="refresh-label">10s</span>
+        <div class="toolbar-actions">
+          <div class="toolbar-meta text-sm text-[var(--accents-4)]">
+            <span data-i18n="tasks.autoRefresh">自动刷新</span>
+            <span id="refresh-label">10s</span>
+          </div>
+          <button id="manual-refresh-btn" type="button" class="geist-button-outline text-sm px-3" onclick="loadTasks(true)">
+            <span data-i18n="tasks.manualRefresh">手动刷新</span>
+          </button>
         </div>
       </div>
 
@@ -35,12 +40,12 @@
 
       <section class="space-y-4">
         <div class="section-header">
-          <h3 class="section-title" data-i18n="tasks.todaySummary">今日统计</h3>
+          <h3 class="section-title" data-i18n="tasks.summaryTitle">任务统计</h3>
         </div>
         <div class="summary-grid">
           <div class="stat-card">
             <div class="stat-value" id="summary-total">0</div>
-            <div class="stat-label" data-i18n="tasks.totalTasks">今日总任务</div>
+            <div class="stat-label" data-i18n="tasks.totalTasks">总任务</div>
           </div>
           <div class="stat-card">
             <div class="stat-value text-blue-600" id="summary-image-running">0</div>
@@ -68,18 +73,39 @@
           </div>
           <div class="stat-card">
             <div class="stat-value" id="active-count">0</div>
-            <div class="stat-label" data-i18n="tasks.activeCount">当前运行中</div>
+            <div class="stat-label" data-i18n="tasks.activeCount">进行中任务</div>
           </div>
         </div>
       </section>
 
       <section class="space-y-4">
         <div class="section-header">
-          <h3 class="section-title" data-i18n="tasks.activeTasks">正在进行的任务</h3>
+          <h3 class="section-title" data-i18n="tasks.taskList">任务列表</h3>
         </div>
+
+        <div class="filter-shell">
+          <div class="filter-group">
+            <span class="filter-label" data-i18n="tasks.filterType">类型</span>
+            <div class="filter-row">
+              <button type="button" class="filter-chip active" data-filter-group="type" data-filter-value="all" onclick="setTypeFilter('all', this)">全部</button>
+              <button type="button" class="filter-chip" data-filter-group="type" data-filter-value="image" onclick="setTypeFilter('image', this)" data-i18n="tasks.typeImage">图片</button>
+              <button type="button" class="filter-chip" data-filter-group="type" data-filter-value="video" onclick="setTypeFilter('video', this)" data-i18n="tasks.typeVideo">视频</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label" data-i18n="tasks.filterStatus">状态</span>
+            <div class="filter-row">
+              <button type="button" class="filter-chip active" data-filter-group="status" data-filter-value="all" onclick="setStatusFilter('all', this)">全部</button>
+              <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="running" onclick="setStatusFilter('running', this)" data-i18n="tasks.statusRunning">进行中</button>
+              <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="success" onclick="setStatusFilter('success', this)" data-i18n="tasks.statusSuccess">成功</button>
+              <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="failure" onclick="setStatusFilter('failure', this)" data-i18n="tasks.statusFailure">失败</button>
+            </div>
+          </div>
+        </div>
+
         <div class="table-shell">
           <div class="overflow-x-auto">
-            <table class="geist-table min-w-[920px]">
+            <table class="geist-table min-w-[980px]">
               <thead>
                 <tr>
                   <th data-i18n="tasks.tableType">任务类型</th>
@@ -91,36 +117,18 @@
                   <th data-i18n="tasks.tableEndpoint">接口入口</th>
                 </tr>
               </thead>
-              <tbody id="active-task-body"></tbody>
+              <tbody id="task-list-body"></tbody>
             </table>
           </div>
-          <div id="active-empty" class="table-empty hidden" data-i18n="tasks.noActiveTasks">当前没有正在运行的任务。</div>
+          <div id="task-list-empty" class="table-empty hidden" data-i18n="tasks.noTasks">当前没有匹配的任务。</div>
         </div>
       </section>
 
       <section class="space-y-4">
         <div class="section-header">
-          <h3 class="section-title" data-i18n="tasks.dailyStats">近 7 天任务统计</h3>
+          <h3 class="section-title" data-i18n="tasks.sevenDayStats">近 7 天任务统计</h3>
         </div>
-        <div class="table-shell">
-          <div class="overflow-x-auto">
-            <table class="geist-table min-w-[1040px]">
-              <thead>
-                <tr>
-                  <th data-i18n="tasks.statsDate">日期</th>
-                  <th data-i18n="tasks.statsTotal">总任务数</th>
-                  <th data-i18n="tasks.imageRunning">图片进行中</th>
-                  <th data-i18n="tasks.imageSuccess">图片成功</th>
-                  <th data-i18n="tasks.imageFailure">图片失败</th>
-                  <th data-i18n="tasks.videoRunning">视频进行中</th>
-                  <th data-i18n="tasks.videoSuccess">视频成功</th>
-                  <th data-i18n="tasks.videoFailure">视频失败</th>
-                </tr>
-              </thead>
-              <tbody id="daily-stats-body"></tbody>
-            </table>
-          </div>
-        </div>
+        <div id="daily-stats-grid" class="daily-grid"></div>
       </section>
     </div>
   </main>
