@@ -4,6 +4,8 @@ let loading = false;
 let currentTypeFilter = 'all';
 let currentStatusFilter = 'all';
 let currentTasks = [];
+let currentDailyStats = [];
+let currentRangeFilter = 'today';
 
 const byId = (id) => document.getElementById(id);
 
@@ -78,6 +80,43 @@ function setButtonLoading(isLoading) {
   btn.classList.toggle('opacity-60', isLoading);
 }
 
+function summarizeStats(rangeKey) {
+  const stats = Array.isArray(currentDailyStats) ? currentDailyStats : [];
+  if (!stats.length) {
+    return {
+      total: 0,
+      image: { running: 0, success: 0, failure: 0 },
+      video: { running: 0, success: 0, failure: 0 }
+    };
+  }
+
+  let selected = [];
+  if (rangeKey === 'yesterday') {
+    selected = stats.slice(-2, -1);
+  } else if (rangeKey === 'last3') {
+    selected = stats.slice(-3);
+  } else if (rangeKey === 'last7') {
+    selected = stats.slice(-7);
+  } else {
+    selected = stats.slice(-1);
+  }
+
+  return selected.reduce((acc, item) => {
+    acc.total += item.total || 0;
+    acc.image.running += item.image?.running || 0;
+    acc.image.success += item.image?.success || 0;
+    acc.image.failure += item.image?.failure || 0;
+    acc.video.running += item.video?.running || 0;
+    acc.video.success += item.video?.success || 0;
+    acc.video.failure += item.video?.failure || 0;
+    return acc;
+  }, {
+    total: 0,
+    image: { running: 0, success: 0, failure: 0 },
+    video: { running: 0, success: 0, failure: 0 }
+  });
+}
+
 function renderSummary(summary) {
   const image = summary.image || {};
   const video = summary.video || {};
@@ -126,42 +165,12 @@ function renderTaskList() {
   `).join('');
 }
 
-function renderDailyStats(stats) {
-  const grid = byId('daily-stats-grid');
-  if (!grid) return;
-  grid.innerHTML = stats.map(item => `
-    <article class="daily-card">
-      <div class="daily-date">${item.date}</div>
-      <div class="daily-total">${item.total || 0}</div>
-      <div class="daily-total-label">${tt('tasks.totalTasks')}</div>
-      <div class="daily-breakdown">
-        <div class="daily-metric">
-          <div class="daily-metric-title">${tt('tasks.imageRunning')}</div>
-          <div class="daily-metric-value">${item.image?.running || 0}</div>
-        </div>
-        <div class="daily-metric">
-          <div class="daily-metric-title">${tt('tasks.imageSuccess')}</div>
-          <div class="daily-metric-value">${item.image?.success || 0}</div>
-        </div>
-        <div class="daily-metric">
-          <div class="daily-metric-title">${tt('tasks.imageFailure')}</div>
-          <div class="daily-metric-value">${item.image?.failure || 0}</div>
-        </div>
-        <div class="daily-metric">
-          <div class="daily-metric-title">${tt('tasks.videoRunning')}</div>
-          <div class="daily-metric-value">${item.video?.running || 0}</div>
-        </div>
-        <div class="daily-metric">
-          <div class="daily-metric-title">${tt('tasks.videoSuccess')}</div>
-          <div class="daily-metric-value">${item.video?.success || 0}</div>
-        </div>
-        <div class="daily-metric">
-          <div class="daily-metric-title">${tt('tasks.videoFailure')}</div>
-          <div class="daily-metric-value">${item.video?.failure || 0}</div>
-        </div>
-      </div>
-    </article>
-  `).join('');
+function setRangeFilter(value, button) {
+  currentRangeFilter = value;
+  document.querySelectorAll('[data-range-filter]').forEach((item) => {
+    item.classList.toggle('active', item === button);
+  });
+  renderSummary(summarizeStats(currentRangeFilter));
 }
 
 function setTypeFilter(value, button) {
@@ -191,10 +200,9 @@ async function loadTasks(showNotice = false) {
     if (res.ok) {
       const data = await res.json();
       currentTasks = Array.isArray(data.task_list) ? data.task_list : [];
-      const dailyStats = Array.isArray(data.daily_stats) ? data.daily_stats : [];
-      renderSummary(data.summary_total || {});
+      currentDailyStats = Array.isArray(data.daily_stats) ? data.daily_stats : [];
+      renderSummary(summarizeStats(currentRangeFilter));
       renderTaskList();
-      renderDailyStats(dailyStats);
       if (showNotice) showToast(t('common.operationSuccess'), 'success');
       return;
     }

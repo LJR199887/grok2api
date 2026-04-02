@@ -41,6 +41,12 @@
       <section class="space-y-4">
         <div class="section-header">
           <h3 class="section-title" data-i18n="tasks.summaryTitle">任务统计</h3>
+          <div class="filter-row">
+            <button type="button" class="filter-chip active" data-range-filter="today" onclick="setRangeFilter('today', this)" data-i18n="tasks.rangeToday">今日</button>
+            <button type="button" class="filter-chip" data-range-filter="yesterday" onclick="setRangeFilter('yesterday', this)" data-i18n="tasks.rangeYesterday">昨日</button>
+            <button type="button" class="filter-chip" data-range-filter="last3" onclick="setRangeFilter('last3', this)" data-i18n="tasks.rangeLast3">近3天</button>
+            <button type="button" class="filter-chip" data-range-filter="last7" onclick="setRangeFilter('last7', this)" data-i18n="tasks.rangeLast7">近7天</button>
+          </div>
         </div>
         <div class="summary-grid">
           <div class="stat-card">
@@ -124,12 +130,6 @@
         </div>
       </section>
 
-      <section class="space-y-4">
-        <div class="section-header">
-          <h3 class="section-title" data-i18n="tasks.sevenDayStats">近 7 天任务统计</h3>
-        </div>
-        <div id="daily-stats-grid" class="daily-grid"></div>
-      </section>
     </div>
   </main>
 
