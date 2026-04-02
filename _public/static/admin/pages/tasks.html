@@ -64,6 +64,10 @@
             <div class="stat-label" data-i18n="tasks.imageFailure">图片失败</div>
           </div>
           <div class="stat-card">
+            <div class="stat-value" id="active-count">0</div>
+            <div class="stat-label" data-i18n="tasks.activeCount">进行中任务</div>
+          </div>
+          <div class="stat-card">
             <div class="stat-value text-blue-600" id="summary-video-running">0</div>
             <div class="stat-label" data-i18n="tasks.videoRunning">视频进行中</div>
           </div>
@@ -75,10 +79,6 @@
             <div class="stat-value text-red-600" id="summary-video-failure">0</div>
             <div class="stat-label" data-i18n="tasks.videoFailure">视频失败</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-value" id="active-count">0</div>
-            <div class="stat-label" data-i18n="tasks.activeCount">进行中任务</div>
-          </div>
         </div>
       </section>
 
@@ -87,44 +87,46 @@
           <h3 class="section-title" data-i18n="tasks.taskList">任务列表</h3>
         </div>
 
-        <div class="filter-shell">
-          <div class="filter-group">
-            <span class="filter-label" data-i18n="tasks.filterType">类型</span>
-            <div class="filter-row">
-              <button type="button" class="filter-chip active" data-filter-group="type" data-filter-value="all" onclick="setTypeFilter('all', this)">全部</button>
-              <button type="button" class="filter-chip" data-filter-group="type" data-filter-value="image" onclick="setTypeFilter('image', this)" data-i18n="tasks.typeImage">图片</button>
-              <button type="button" class="filter-chip" data-filter-group="type" data-filter-value="video" onclick="setTypeFilter('video', this)" data-i18n="tasks.typeVideo">视频</button>
+        <div class="flex flex-col bg-white/70 backdrop-blur-xl border border-black/5 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+          <div class="filter-shell border-b border-black/5">
+            <div class="filter-group">
+              <span class="filter-label" data-i18n="tasks.filterType">类型</span>
+              <div class="filter-row">
+                <button type="button" class="filter-chip active" data-filter-group="type" data-filter-value="all" onclick="setTypeFilter('all', this)">全部</button>
+                <button type="button" class="filter-chip" data-filter-group="type" data-filter-value="image" onclick="setTypeFilter('image', this)" data-i18n="tasks.typeImage">图片</button>
+                <button type="button" class="filter-chip" data-filter-group="type" data-filter-value="video" onclick="setTypeFilter('video', this)" data-i18n="tasks.typeVideo">视频</button>
+              </div>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label" data-i18n="tasks.filterStatus">状态</span>
+              <div class="filter-row">
+                <button type="button" class="filter-chip active" data-filter-group="status" data-filter-value="all" onclick="setStatusFilter('all', this)">全部</button>
+                <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="running" onclick="setStatusFilter('running', this)" data-i18n="tasks.statusRunning">进行中</button>
+                <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="success" onclick="setStatusFilter('success', this)" data-i18n="tasks.statusSuccess">成功</button>
+                <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="failure" onclick="setStatusFilter('failure', this)" data-i18n="tasks.statusFailure">失败</button>
+              </div>
             </div>
           </div>
-          <div class="filter-group">
-            <span class="filter-label" data-i18n="tasks.filterStatus">状态</span>
-            <div class="filter-row">
-              <button type="button" class="filter-chip active" data-filter-group="status" data-filter-value="all" onclick="setStatusFilter('all', this)">全部</button>
-              <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="running" onclick="setStatusFilter('running', this)" data-i18n="tasks.statusRunning">进行中</button>
-              <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="success" onclick="setStatusFilter('success', this)" data-i18n="tasks.statusSuccess">成功</button>
-              <button type="button" class="filter-chip" data-filter-group="status" data-filter-value="failure" onclick="setStatusFilter('failure', this)" data-i18n="tasks.statusFailure">失败</button>
-            </div>
-          </div>
-        </div>
 
-        <div class="table-shell">
-          <div class="overflow-x-auto">
-            <table class="geist-table min-w-[980px]">
-              <thead>
-                <tr>
-                  <th data-i18n="tasks.tableType">任务类型</th>
-                  <th data-i18n="tasks.tableSource">来源</th>
-                  <th data-i18n="tasks.tableModel">模型</th>
-                  <th data-i18n="tasks.tableStatus">状态</th>
-                  <th data-i18n="tasks.tableStartedAt">开始时间</th>
-                  <th data-i18n="tasks.tableDuration">耗时/秒</th>
-                  <th data-i18n="tasks.tableEndpoint">接口入口</th>
-                </tr>
-              </thead>
-              <tbody id="task-list-body"></tbody>
-            </table>
+          <div class="table-shell flex-1">
+            <div class="overflow-x-auto">
+              <table class="geist-table min-w-[980px]">
+                <thead>
+                  <tr>
+                    <th data-i18n="tasks.tableType">任务类型</th>
+                    <th data-i18n="tasks.tableSource">来源</th>
+                    <th data-i18n="tasks.tableModel">模型</th>
+                    <th data-i18n="tasks.tableStatus">状态</th>
+                    <th data-i18n="tasks.tableStartedAt">开始时间</th>
+                    <th data-i18n="tasks.tableDuration">耗时/秒</th>
+                    <th data-i18n="tasks.tableEndpoint">接口入口</th>
+                  </tr>
+                </thead>
+                <tbody id="task-list-body"></tbody>
+              </table>
+            </div>
+            <div id="task-list-empty" class="table-empty hidden" data-i18n="tasks.noTasks">当前没有匹配的任务。</div>
           </div>
-          <div id="task-list-empty" class="table-empty hidden" data-i18n="tasks.noTasks">当前没有匹配的任务。</div>
         </div>
       </section>
 
