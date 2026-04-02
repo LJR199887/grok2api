@@ -209,6 +209,7 @@
         "timeout": {"title": "Request Timeout", "desc": "Voice request timeout (seconds)."}
       },
       "token": {
+        "auto_disable_basic_tokens": {"title": "Auto Disable ssoBasic", "desc": "Whether to automatically mark a token as disabled when it is detected as ssoBasic."},
         "auto_refresh": {"title": "Auto Refresh", "desc": "Whether to enable automatic Token refresh."},
         "refresh_interval_hours": {"title": "Refresh Interval", "desc": "Time interval (hours) for regular Token refresh."},
         "super_refresh_interval_hours": {"title": "Super Refresh Interval", "desc": "Time interval (hours) for Super Token refresh."},
