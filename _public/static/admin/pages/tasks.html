@@ -18,21 +18,23 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="app-header"></div>
 
-  <main class="space-y-6 flex-1 container mx-auto max-w-5xl px-6 py-8 fade-in">
-    <div class="space-y-6">
-      <div class="flex justify-between items-center gap-4 flex-wrap">
-        <div>
-          <h2 class="text-2xl font-semibold tracking-tight" data-i18n="tasks.title">任务管理</h2>
-          <p class="text-[var(--accents-4)] mt-1 text-sm" data-i18n="tasks.subtitle">查看图片和视频任务的运行状态与统计概览。</p>
+  <div class="fixed top-0 left-0 w-full h-[300px] bg-gradient-to-b from-blue-50/50 to-transparent pointer-events-none z-[-1]"></div>
+  <main class="space-y-8 flex-1 container mx-auto max-w-[1200px] px-6 py-10 fade-in">
+    <div class="space-y-10">
+      <div class="flex justify-between items-end gap-4 flex-wrap">
+        <div class="space-y-1">
+          <h2 class="text-3xl font-bold tracking-tight text-gray-900" data-i18n="tasks.title">任务管理</h2>
+          <p class="text-gray-500 text-[15px] font-medium" data-i18n="tasks.subtitle">查看图片和视频任务的运行状态与统计概览。</p>
         </div>
         <div class="toolbar-actions">
-          <button id="manual-refresh-btn" type="button" class="geist-button-outline text-sm px-3" onclick="loadTasks(true)">
-            <span data-i18n="tasks.manualRefresh">刷新</span>
+          <button id="manual-refresh-btn" type="button" class="group relative overflow-hidden rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-800 hover:shadow-lg hover:-translate-y-0.5 active:scale-95" onclick="loadTasks(true)">
+            <span class="relative z-10 flex items-center gap-2">
+              <svg class="h-4 w-4 transition-transform group-hover:rotate-180 duration-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <span data-i18n="tasks.manualRefresh">刷新数据</span>
+            </span>
           </button>
         </div>
       </div>
-
-      <div class="h-px bg-[var(--border)] my-6"></div>
 
       <section class="space-y-4">
         <div class="section-header">
