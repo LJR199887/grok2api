@@ -215,6 +215,35 @@ class TokenManager:
                         return None
         return None
 
+    def _auto_disable_basic_tokens_enabled(self) -> bool:
+        try:
+            return bool(get_config("token.auto_disable_basic_tokens", False))
+        except Exception:
+            return False
+
+    def _maybe_auto_disable_basic_token(
+        self,
+        token: TokenInfo,
+        *,
+        pool_name: Optional[str],
+        window_size: Optional[int],
+    ) -> bool:
+        if (
+            pool_name != BASIC_POOL_NAME
+            or window_size is None
+            or window_size < SUPER_WINDOW_THRESHOLD_SECONDS
+            or not self._auto_disable_basic_tokens_enabled()
+            or token.status == TokenStatus.DISABLED
+        ):
+            return False
+
+        token.status = TokenStatus.DISABLED
+        logger.warning(
+            f"Token {token.token[:10]}...: detected as ssoBasic "
+            f"(windowSizeSeconds={window_size}), auto-disabled by config"
+        )
+        return True
+
     def _move_token_pool(
         self,
         token: TokenInfo,
@@ -577,6 +606,11 @@ class TokenManager:
                             SUPER_POOL_NAME,
                             reason=f"windowSizeSeconds={window_size}",
                         )
+                self._maybe_auto_disable_basic_token(
+                    target_token,
+                    pool_name=target_pool_name,
+                    window_size=window_size,
+                )
 
                 consumed = max(0, old_quota - new_quota)
                 logger.debug(
@@ -1024,6 +1058,11 @@ class TokenManager:
                                 SUPER_POOL_NAME,
                                 reason=f"windowSizeSeconds={window_size}",
                             )
+                    self._maybe_auto_disable_basic_token(
+                        token_info,
+                        pool_name=self.get_pool_name_for_token(token_info.token),
+                        window_size=window_size,
+                    )
 
                     logger.debug(
                         f"Token {token_info.token[:10]}...: refreshed "

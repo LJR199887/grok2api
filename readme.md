@@ -197,6 +197,7 @@ curl http://localhost:8000/v1/chat/completions \
 - `grok-imagine-1.0-fast` 流式 URL 出图会保持原始图片名（不追加 `-final` 后缀）。
 - 当图片疑似被审查拦截导致无最终图时，若开启 `image.blocked_parallel_enabled`，服务端会按 `image.blocked_parallel_attempts` 自动并行补偿生成，并优先使用不同 token；若仍无满足 `image.final_min_bytes` 的最终图则返回失败。
 - `grok-imagine-1.0-edit` 必须提供图片，多图默认取**最后 3 张**与最后一个文本。
+- `grok-imagine-1.0-edit` 已按上游 `imagine-image-edit + toolOverrides.imageGen=true` 链路对齐；推荐优先使用 `/v1/images/edits`（文件上传），也支持通过 `/v1/chat/completions` 传 `image_url` 做图生图。
 - `grok-imagine-1.0-video` 支持文生视频与多图参考视频：可通过多个 `image_url` 传最多 `7` 张参考图，并在文本中使用 `@图1`、`@图2` 这类占位符；服务端会自动替换为对应 `assetId`。
 - `@图N` 与 `image_url` 的顺序一一对应；若引用了不存在的图片序号，会直接报错。
 - 除上述外的其他参数将自动丢弃并忽略。
@@ -304,7 +305,52 @@ curl http://localhost:8000/v1/images/edits \
   -F "model=grok-imagine-1.0-edit" \
   -F "prompt=把图片变清晰" \
   -F "image=@/path/to/image.png" \
-  -F "n=1"
+  -F "n=1" \
+  -F "response_format=url"
+```
+
+```bash
+curl http://localhost:8000/v1/images/edits \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -F "model=grok-imagine-1.0-edit" \
+  -F "prompt=把这张图改成更清晰、更有电影感的赛博朋克夜景" \
+  -F "image=@/path/to/image.png" \
+  -F "n=1" \
+  -F "response_format=url"
+```
+
+> 也可以通过 `POST /v1/chat/completions` 使用 `image_url` 方式调用图生图：
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -d '{
+    "model": "grok-imagine-1.0-edit",
+    "stream": false,
+    "image_config": {
+      "n": 1,
+      "size": "1024x1024",
+      "response_format": "url"
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "把这张图改成更清晰、更有电影感的赛博朋克夜景"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/input.png"
+            }
+          }
+        ]
+      }
+    ]
+  }'
 ```
 
 <details>
@@ -428,6 +474,7 @@ curl http://localhost:8000/v1/videos \
 | **token** | `auto_refresh` | 自动刷新 | 是否开启 Token 自动刷新机制。 | `true` |
 |  | `refresh_interval_hours` | 刷新间隔 | 普通 Token 刷新的时间间隔（小时）。 | `8` |
 |  | `super_refresh_interval_hours` | Super 刷新间隔 | Super Token 刷新的时间间隔（小时）。 | `2` |
+|  | `auto_disable_basic_tokens` | 自动禁用 ssoBasic | 检测到为 ssoBasic Token 时，是否自动将其标记为禁用。 | `false` |
 |  | `fail_threshold` | 失败阈值 | 单个 Token 连续失败多少次后被标记为不可用。 | `5` |
 |  | `save_delay_ms` | 保存延迟 | Token 变更合并写入的延迟（毫秒）。 | `500` |
 |  | `usage_flush_interval_sec` | 用量落库间隔 | 用量类字段写入数据库的最小间隔（秒）。 | `5` |

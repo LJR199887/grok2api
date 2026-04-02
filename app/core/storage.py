@@ -36,6 +36,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", str(DEFAULT_DATA_DIR))).expanduser()
 # 配置文件路径
 CONFIG_FILE = DATA_DIR / "config.toml"
 TOKEN_FILE = DATA_DIR / "token.json"
+MEDIA_TASK_FILE = DATA_DIR / "media_tasks.json"
 LOCK_DIR = DATA_DIR / ".locks"
 
 
@@ -70,6 +71,62 @@ def has_token_entries(data: Any) -> bool:
                 if isinstance(token, str) and token.strip():
                     return True
     return False
+
+
+def _normalize_media_task_record(record: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(record, dict):
+        return None
+    task_id = record.get("task_id")
+    if not isinstance(task_id, str) or not task_id.strip():
+        return None
+    normalized = dict(record)
+    for field in ("created_at", "updated_at", "completed_at"):
+        value = normalized.get(field)
+        if value in (None, ""):
+            normalized[field] = None if field == "completed_at" else value
+            continue
+        try:
+            normalized[field] = int(value)
+        except (TypeError, ValueError):
+            pass
+    return normalized
+
+
+def _filter_media_tasks(
+    tasks: list[Dict[str, Any]],
+    *,
+    statuses: Optional[list[str]] = None,
+    since: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> list[Dict[str, Any]]:
+    filtered: list[Dict[str, Any]] = []
+    allowed_statuses = set(statuses or [])
+    for raw in tasks:
+        task = _normalize_media_task_record(raw)
+        if not task:
+            continue
+        created_at = task.get("created_at")
+        if since is not None:
+            try:
+                if created_at is None or int(created_at) < int(since):
+                    continue
+            except (TypeError, ValueError):
+                continue
+        if allowed_statuses:
+            status = str(task.get("status") or "")
+            if status not in allowed_statuses:
+                continue
+        filtered.append(task)
+    filtered.sort(
+        key=lambda item: (
+            int(item.get("created_at") or 0),
+            int(item.get("updated_at") or 0),
+        ),
+        reverse=True,
+    )
+    if limit is not None and limit > 0:
+        return filtered[:limit]
+    return filtered
 
 
 class StorageError(Exception):
@@ -153,6 +210,22 @@ class BaseStorage(abc.ABC):
                 pool_list.append(normalized)
 
         await self.save_tokens(existing)
+
+    @abc.abstractmethod
+    async def upsert_media_task(self, data: Dict[str, Any]):
+        """Persist a media task record."""
+        pass
+
+    @abc.abstractmethod
+    async def list_media_tasks(
+        self,
+        *,
+        statuses: Optional[list[str]] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        """List media task records."""
+        pass
 
     @abc.abstractmethod
     async def close(self):
@@ -310,6 +383,57 @@ class LocalStorage(BaseStorage):
             logger.error(f"LocalStorage: 保存 Token 失败: {e}")
             raise StorageError(f"保存 Token 失败: {e}")
 
+    async def _load_media_task_map(self) -> Dict[str, Any]:
+        if not MEDIA_TASK_FILE.exists():
+            return {}
+        try:
+            async with aiofiles.open(MEDIA_TASK_FILE, "rb") as f:
+                content = await f.read()
+            data = json_loads(content)
+            if isinstance(data, dict):
+                return data
+            if isinstance(data, list):
+                return {
+                    item["task_id"]: item
+                    for item in data
+                    if isinstance(item, dict) and item.get("task_id")
+                }
+        except Exception as e:
+            logger.error(f"LocalStorage: failed to load media tasks: {e}")
+        return {}
+
+    async def upsert_media_task(self, data: Dict[str, Any]):
+        record = _normalize_media_task_record(data)
+        if not record:
+            raise StorageError("Invalid media task payload")
+        try:
+            MEDIA_TASK_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = MEDIA_TASK_FILE.with_suffix(".tmp")
+            async with self.acquire_lock("media_tasks"):
+                existing = await self._load_media_task_map()
+                existing[record["task_id"]] = record
+                async with aiofiles.open(temp_path, "wb") as f:
+                    await f.write(orjson.dumps(existing, option=orjson.OPT_INDENT_2))
+                os.replace(temp_path, MEDIA_TASK_FILE)
+        except Exception as e:
+            logger.error(f"LocalStorage: failed to save media task: {e}")
+            raise StorageError(f"failed to save media task: {e}")
+
+    async def list_media_tasks(
+        self,
+        *,
+        statuses: Optional[list[str]] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        data = await self._load_media_task_map()
+        return _filter_media_tasks(
+            list(data.values()),
+            statuses=statuses,
+            since=since,
+            limit=limit,
+        )
+
     async def close(self):
         pass
 
@@ -337,6 +461,9 @@ class RedisStorage(BaseStorage):
         self.key_pools = "grok2api:pools"  # Set: pool_names
         self.prefix_pool_set = "grok2api:pool:"  # Set: pool -> token_ids
         self.prefix_token_hash = "grok2api:token:"  # Hash: token_id -> token_data
+        self.key_media_task_index = "grok2api:media_tasks:index"
+        self.key_media_task_running = "grok2api:media_tasks:running"
+        self.prefix_media_task_key = "grok2api:media_task:"
         self.lock_prefix = "grok2api:lock:"
 
     @asynccontextmanager
@@ -570,6 +697,70 @@ class RedisStorage(BaseStorage):
             logger.error(f"RedisStorage: 保存 Token 失败: {e}")
             raise
 
+    async def upsert_media_task(self, data: Dict[str, Any]):
+        record = _normalize_media_task_record(data)
+        if not record:
+            raise StorageError("Invalid media task payload")
+        task_id = record["task_id"]
+        key = f"{self.prefix_media_task_key}{task_id}"
+        score = int(record.get("created_at") or 0)
+        try:
+            async with self.redis.pipeline() as pipe:
+                pipe.set(key, json_dumps(record))
+                pipe.zadd(self.key_media_task_index, {task_id: score})
+                if record.get("status") == "running":
+                    pipe.sadd(self.key_media_task_running, task_id)
+                else:
+                    pipe.srem(self.key_media_task_running, task_id)
+                await pipe.execute()
+        except Exception as e:
+            logger.error(f"RedisStorage: failed to save media task: {e}")
+            raise StorageError(f"failed to save media task: {e}")
+
+    async def list_media_tasks(
+        self,
+        *,
+        statuses: Optional[list[str]] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        try:
+            ids: list[str] = []
+            if statuses and set(statuses) == {"running"}:
+                running_ids = await self.redis.smembers(self.key_media_task_running)
+                ids = list(running_ids or [])
+            else:
+                min_score = since if since is not None else "-inf"
+                ids = await self.redis.zrevrangebyscore(
+                    self.key_media_task_index,
+                    "+inf",
+                    min_score,
+                )
+            if not ids:
+                return []
+            values = await self.redis.mget(
+                [f"{self.prefix_media_task_key}{task_id}" for task_id in ids]
+            )
+            records: list[Dict[str, Any]] = []
+            for item in values or []:
+                if not item:
+                    continue
+                try:
+                    parsed = json_loads(item)
+                except Exception:
+                    continue
+                if isinstance(parsed, dict):
+                    records.append(parsed)
+            return _filter_media_tasks(
+                records,
+                statuses=statuses,
+                since=since,
+                limit=limit,
+            )
+        except Exception as e:
+            logger.error(f"RedisStorage: failed to list media tasks: {e}")
+            return []
+
     async def close(self):
         try:
             await self.redis.close()
@@ -655,16 +846,59 @@ class SQLStorage(BaseStorage):
                 )
 
                 # 索引
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS media_tasks (
+                        task_id VARCHAR(64) PRIMARY KEY,
+                        task_type VARCHAR(16) NOT NULL,
+                        source VARCHAR(32) NOT NULL,
+                        status VARCHAR(16) NOT NULL,
+                        model VARCHAR(128),
+                        endpoint VARCHAR(128),
+                        created_at BIGINT NOT NULL,
+                        updated_at BIGINT NOT NULL,
+                        completed_at BIGINT,
+                        error_message TEXT
+                    )
+                """)
+                )
+
                 if self.dialect in ("postgres", "postgresql", "pgsql"):
                     await conn.execute(
                         text(
                             "CREATE INDEX IF NOT EXISTS idx_tokens_pool ON tokens (pool_name)"
                         )
                     )
+                    await conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS idx_media_tasks_status ON media_tasks (status)"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS idx_media_tasks_created_at ON media_tasks (created_at)"
+                        )
+                    )
                 else:
                     try:
                         await conn.execute(
                             text("CREATE INDEX idx_tokens_pool ON tokens (pool_name)")
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        await conn.execute(
+                            text(
+                                "CREATE INDEX idx_media_tasks_status ON media_tasks (status)"
+                            )
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        await conn.execute(
+                            text(
+                                "CREATE INDEX idx_media_tasks_created_at ON media_tasks (created_at)"
+                            )
                         )
                     except Exception:
                         pass
@@ -1303,6 +1537,120 @@ class SQLStorage(BaseStorage):
         except Exception as e:
             logger.error(f"SQLStorage: 增量保存 Token 失败: {e}")
             raise
+
+    async def upsert_media_task(self, data: Dict[str, Any]):
+        await self._ensure_schema()
+        from sqlalchemy import text
+
+        record = _normalize_media_task_record(data)
+        if not record:
+            raise StorageError("Invalid media task payload")
+
+        try:
+            async with self.async_session() as session:
+                if self.dialect in ("mysql", "mariadb"):
+                    stmt = text(
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message) "
+                        "ON DUPLICATE KEY UPDATE "
+                        "task_type=VALUES(task_type), "
+                        "source=VALUES(source), "
+                        "status=VALUES(status), "
+                        "model=VALUES(model), "
+                        "endpoint=VALUES(endpoint), "
+                        "created_at=VALUES(created_at), "
+                        "updated_at=VALUES(updated_at), "
+                        "completed_at=VALUES(completed_at), "
+                        "error_message=VALUES(error_message)"
+                    )
+                elif self.dialect in ("postgres", "postgresql", "pgsql"):
+                    stmt = text(
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message) "
+                        "ON CONFLICT (task_id) DO UPDATE SET "
+                        "task_type=EXCLUDED.task_type, "
+                        "source=EXCLUDED.source, "
+                        "status=EXCLUDED.status, "
+                        "model=EXCLUDED.model, "
+                        "endpoint=EXCLUDED.endpoint, "
+                        "created_at=EXCLUDED.created_at, "
+                        "updated_at=EXCLUDED.updated_at, "
+                        "completed_at=EXCLUDED.completed_at, "
+                        "error_message=EXCLUDED.error_message"
+                    )
+                else:
+                    stmt = text(
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message)"
+                    )
+                await session.execute(stmt, record)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"SQLStorage: failed to save media task: {e}")
+            raise StorageError(f"failed to save media task: {e}")
+
+    async def list_media_tasks(
+        self,
+        *,
+        statuses: Optional[list[str]] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        await self._ensure_schema()
+        from sqlalchemy import bindparam, text
+
+        try:
+            query = (
+                "SELECT task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message "
+                "FROM media_tasks WHERE 1=1"
+            )
+            params: Dict[str, Any] = {}
+            stmt = text(query)
+            if since is not None:
+                query += " AND created_at >= :since"
+                params["since"] = int(since)
+            if statuses:
+                query += " AND status IN :statuses"
+                stmt = text(query).bindparams(bindparam("statuses", expanding=True))
+                params["statuses"] = list(statuses)
+            else:
+                stmt = text(query)
+            query += " ORDER BY created_at DESC, updated_at DESC"
+            if limit is not None and limit > 0:
+                query += " LIMIT :limit"
+                params["limit"] = int(limit)
+            if statuses:
+                stmt = text(query).bindparams(bindparam("statuses", expanding=True))
+            else:
+                stmt = text(query)
+            async with self.async_session() as session:
+                res = await session.execute(stmt, params)
+                rows = res.fetchall()
+            records = []
+            for row in rows:
+                records.append(
+                    {
+                        "task_id": row[0],
+                        "task_type": row[1],
+                        "source": row[2],
+                        "status": row[3],
+                        "model": row[4],
+                        "endpoint": row[5],
+                        "created_at": row[6],
+                        "updated_at": row[7],
+                        "completed_at": row[8],
+                        "error_message": row[9],
+                    }
+                )
+            return _filter_media_tasks(
+                records,
+                statuses=statuses,
+                since=since,
+                limit=limit,
+            )
+        except Exception as e:
+            logger.error(f"SQLStorage: failed to list media tasks: {e}")
+            return []
 
     async def close(self):
         await self.engine.dispose()

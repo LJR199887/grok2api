@@ -12,6 +12,7 @@ from app.core.auth import verify_function_key
 from app.core.logger import logger
 from app.services.grok.services.video import VideoService
 from app.services.grok.services.model import ModelService
+from app.services.tasks import get_media_task_service
 
 router = APIRouter()
 
@@ -224,10 +225,18 @@ async def function_video_sse(request: Request, task_id: str = Query("")):
     reasoning_effort = session.get("reasoning_effort")
 
     async def event_stream():
+        task_service = get_media_task_service()
+        task = await task_service.create_task(
+            task_type="video",
+            source="function_video",
+            model="grok-imagine-1.0-video",
+            endpoint="/v1/function/video/sse",
+        )
         try:
             model_id = "grok-imagine-1.0-video"
             model_info = ModelService.get(model_id)
             if not model_info or not model_info.is_video:
+                await task_service.mark_failure(task, "Video model is not available.")
                 payload = {
                     "error": "Video model is not available.",
                     "code": "model_not_supported",
@@ -264,9 +273,17 @@ async def function_video_sse(request: Request, task_id: str = Query("")):
 
             async for chunk in stream:
                 if await request.is_disconnected():
+                    await task_service.mark_failure(task, "client_disconnected")
+                    break
+                session_alive = await _get_session(task_id)
+                if not session_alive:
+                    await task_service.mark_failure(task, "cancelled")
                     break
                 yield chunk
+            else:
+                await task_service.mark_success(task)
         except Exception as e:
+            await task_service.mark_failure(task, e)
             logger.warning(f"Function video SSE error: {e}")
             payload = {"error": str(e), "code": "internal_error"}
             yield f"data: {orjson.dumps(payload).decode()}\n\n"

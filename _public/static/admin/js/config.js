@@ -153,6 +153,7 @@ const LOCALE_MAP = {
     "auto_refresh": { title: "自动刷新", desc: "是否开启 Token 自动刷新机制。" },
     "refresh_interval_hours": { title: "刷新间隔", desc: "普通 Token 刷新的时间间隔（小时）。" },
     "super_refresh_interval_hours": { title: "Super 刷新间隔", desc: "Super Token 刷新的时间间隔（小时）。" },
+    "auto_disable_basic_tokens": { title: "自动禁用 ssoBasic", desc: "检测到为 ssoBasic Token 时，是否自动将其标记为禁用。" },
     "fail_threshold": { title: "失败阈值", desc: "单个 Token 连续失败多少次后被标记为不可用。" },
     "save_delay_ms": { title: "保存延迟", desc: "Token 变更合并写入的延迟（毫秒）。" },
     "usage_flush_interval_sec": { title: "用量落库间隔", desc: "用量类字段写入数据库的最小间隔（秒）。" },

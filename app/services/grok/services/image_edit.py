@@ -35,7 +35,7 @@ from app.services.grok.services.chat import GrokChatService
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import EffortType
 
-_EDIT_UPSTREAM_MODEL = "grok-4"
+_EDIT_UPSTREAM_MODEL = "imagine-image-edit"
 _EDIT_UPSTREAM_MODE = "MODEL_MODE_AUTO"
 
 
@@ -94,7 +94,7 @@ class ImageEditService:
             tried_tokens.add(current_token)
             try:
                 file_attachments = await self._upload_images(images, current_token)
-                tool_overrides: Dict[str, Any] | None = None
+                tool_overrides: Dict[str, Any] | None = {"imageGen": True}
                 request_overrides = self._build_request_overrides(n)
 
                 if stream:
