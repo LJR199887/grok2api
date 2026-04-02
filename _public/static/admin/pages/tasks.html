@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="tasks.pageTitle">Grok2API - 任务管理</title>
+  <link rel="icon" href="/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
+  <link href="/static/common/css/common.css?v=1.6.2" rel="stylesheet">
+  <link href="/static/admin/css/tasks.css?v=1.6.2" rel="stylesheet">
+  <link href="/static/common/css/toast.css" rel="stylesheet">
+</head>
+
+<body class="min-h-screen flex flex-col" style="background-color: var(--bg);">
+  <div id="toast-container" class="toast-container"></div>
+  <div id="app-header"></div>
+
+  <main class="space-y-6 flex-1 container mx-auto max-w-5xl px-6 py-8 fade-in">
+    <div class="space-y-6">
+      <div class="flex justify-between items-center gap-4 flex-wrap">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight" data-i18n="tasks.title">任务管理</h2>
+          <p class="text-[var(--accents-4)] mt-1 text-sm" data-i18n="tasks.subtitle">查看图片和视频任务的运行状态与近 7 天统计。</p>
+        </div>
+        <div class="text-sm text-[var(--accents-4)]">
+          <span data-i18n="tasks.autoRefresh">自动刷新</span>
+          <span id="refresh-label">10s</span>
+        </div>
+      </div>
+
+      <div class="h-px bg-[var(--border)] my-6"></div>
+
+      <section class="space-y-4">
+        <div class="section-header">
+          <h3 class="section-title" data-i18n="tasks.todaySummary">今日统计</h3>
+        </div>
+        <div class="summary-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="summary-total">0</div>
+            <div class="stat-label" data-i18n="tasks.totalTasks">今日总任务</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value text-blue-600" id="summary-image-running">0</div>
+            <div class="stat-label" data-i18n="tasks.imageRunning">图片进行中</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value text-green-600" id="summary-image-success">0</div>
+            <div class="stat-label" data-i18n="tasks.imageSuccess">图片成功</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value text-red-600" id="summary-image-failure">0</div>
+            <div class="stat-label" data-i18n="tasks.imageFailure">图片失败</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value text-blue-600" id="summary-video-running">0</div>
+            <div class="stat-label" data-i18n="tasks.videoRunning">视频进行中</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value text-green-600" id="summary-video-success">0</div>
+            <div class="stat-label" data-i18n="tasks.videoSuccess">视频成功</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value text-red-600" id="summary-video-failure">0</div>
+            <div class="stat-label" data-i18n="tasks.videoFailure">视频失败</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="active-count">0</div>
+            <div class="stat-label" data-i18n="tasks.activeCount">当前运行中</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-4">
+        <div class="section-header">
+          <h3 class="section-title" data-i18n="tasks.activeTasks">正在进行的任务</h3>
+        </div>
+        <div class="table-shell">
+          <div class="overflow-x-auto">
+            <table class="geist-table min-w-[920px]">
+              <thead>
+                <tr>
+                  <th data-i18n="tasks.tableType">任务类型</th>
+                  <th data-i18n="tasks.tableSource">来源</th>
+                  <th data-i18n="tasks.tableModel">模型</th>
+                  <th data-i18n="tasks.tableStatus">状态</th>
+                  <th data-i18n="tasks.tableStartedAt">开始时间</th>
+                  <th data-i18n="tasks.tableDuration">已运行</th>
+                  <th data-i18n="tasks.tableEndpoint">接口入口</th>
+                </tr>
+              </thead>
+              <tbody id="active-task-body"></tbody>
+            </table>
+          </div>
+          <div id="active-empty" class="table-empty hidden" data-i18n="tasks.noActiveTasks">当前没有正在运行的任务。</div>
+        </div>
+      </section>
+
+      <section class="space-y-4">
+        <div class="section-header">
+          <h3 class="section-title" data-i18n="tasks.dailyStats">近 7 天任务统计</h3>
+        </div>
+        <div class="table-shell">
+          <div class="overflow-x-auto">
+            <table class="geist-table min-w-[1040px]">
+              <thead>
+                <tr>
+                  <th data-i18n="tasks.statsDate">日期</th>
+                  <th data-i18n="tasks.statsTotal">总任务数</th>
+                  <th data-i18n="tasks.imageRunning">图片进行中</th>
+                  <th data-i18n="tasks.imageSuccess">图片成功</th>
+                  <th data-i18n="tasks.imageFailure">图片失败</th>
+                  <th data-i18n="tasks.videoRunning">视频进行中</th>
+                  <th data-i18n="tasks.videoSuccess">视频成功</th>
+                  <th data-i18n="tasks.videoFailure">视频失败</th>
+                </tr>
+              </thead>
+              <tbody id="daily-stats-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="/static/i18n/i18n.js"></script>
+  <script src="/static/common/js/admin-auth.js?v=1.6.2"></script>
+  <script src="/static/common/js/header.js?v=1.6.2"></script>
+  <script src="/static/common/js/footer.js?v=1.6.2"></script>
+  <script src="/static/common/js/toast.js"></script>
+  <script src="/static/admin/js/tasks.js?v=1.6.2"></script>
+</body>
+
+</html>

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.image_edit import ImageEditService
 from app.services.grok.services.model import ModelService
+from app.services.tasks import get_media_task_service
 from app.services.token import get_token_manager
 from app.core.exceptions import ValidationException, AppException, ErrorType
 from app.core.config import get_config
@@ -278,22 +279,33 @@ async def create_image(request: ImageGenerationRequest):
     token_mgr, token = await _get_token(request.model)
     model_info = ModelService.get(request.model)
     aspect_ratio = resolve_aspect_ratio(request.size)
-
-    result = await ImageGenerationService().generate(
-        token_mgr=token_mgr,
-        token=token,
-        model_info=model_info,
-        prompt=request.prompt,
-        n=request.n,
-        response_format=response_format,
-        size=request.size,
-        aspect_ratio=aspect_ratio,
-        stream=bool(request.stream),
+    task_service = get_media_task_service()
+    task = await task_service.create_task(
+        task_type="image",
+        source="images_api",
+        model=request.model,
+        endpoint="/v1/images/generations",
     )
+
+    try:
+        result = await ImageGenerationService().generate(
+            token_mgr=token_mgr,
+            token=token,
+            model_info=model_info,
+            prompt=request.prompt,
+            n=request.n,
+            response_format=response_format,
+            size=request.size,
+            aspect_ratio=aspect_ratio,
+            stream=bool(request.stream),
+        )
+    except Exception as exc:
+        await task_service.mark_failure(task, exc)
+        raise
 
     if result.stream:
         return StreamingResponse(
-            result.data,
+            task_service.wrap_stream(task, result.data),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
@@ -305,6 +317,8 @@ async def create_image(request: ImageGenerationRequest):
         "output_tokens": 0,
         "input_tokens_details": {"text_tokens": 0, "image_tokens": 0},
     }
+
+    await task_service.mark_success(task)
 
     return JSONResponse(
         content={
@@ -414,26 +428,38 @@ async def edit_image(
     # 获取 token 和模型信息
     token_mgr, token = await _get_token(edit_request.model)
     model_info = ModelService.get(edit_request.model)
-
-    result = await ImageEditService().edit(
-        token_mgr=token_mgr,
-        token=token,
-        model_info=model_info,
-        prompt=edit_request.prompt,
-        images=images,
-        n=edit_request.n,
-        response_format=response_format,
-        stream=bool(edit_request.stream),
+    task_service = get_media_task_service()
+    task = await task_service.create_task(
+        task_type="image",
+        source="images_api",
+        model=edit_request.model,
+        endpoint="/v1/images/edits",
     )
+
+    try:
+        result = await ImageEditService().edit(
+            token_mgr=token_mgr,
+            token=token,
+            model_info=model_info,
+            prompt=edit_request.prompt,
+            images=images,
+            n=edit_request.n,
+            response_format=response_format,
+            stream=bool(edit_request.stream),
+        )
+    except Exception as exc:
+        await task_service.mark_failure(task, exc)
+        raise
 
     if result.stream:
         return StreamingResponse(
-            result.data,
+            task_service.wrap_stream(task, result.data),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
     data = [{response_field: img} for img in result.data]
+    await task_service.mark_success(task)
 
     return JSONResponse(
         content={

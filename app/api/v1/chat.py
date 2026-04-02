@@ -19,6 +19,7 @@ from app.services.grok.services.image_edit import ImageEditService
 from app.services.grok.services.model import ModelService
 from app.services.grok.services.video import VideoService
 from app.services.grok.utils.response import make_chat_response
+from app.services.tasks import get_media_task_service
 from app.services.token import get_token_manager
 from app.core.config import get_config
 from app.core.exceptions import ValidationException, AppException, ErrorType
@@ -745,26 +746,39 @@ async def chat_completions(request: ChatCompletionRequest):
                 status_code=429,
             )
 
-        result = await ImageEditService().edit(
-            token_mgr=token_mgr,
-            token=token,
-            model_info=model_info,
-            prompt=prompt,
-            images=image_urls,
-            n=n,
-            response_format=response_format,
-            stream=bool(is_stream),
-            chat_format=True,
+        task_service = get_media_task_service()
+        task = await task_service.create_task(
+            task_type="image",
+            source="chat_completions",
+            model=request.model,
+            endpoint="/v1/chat/completions",
         )
+
+        try:
+            result = await ImageEditService().edit(
+                token_mgr=token_mgr,
+                token=token,
+                model_info=model_info,
+                prompt=prompt,
+                images=image_urls,
+                n=n,
+                response_format=response_format,
+                stream=bool(is_stream),
+                chat_format=True,
+            )
+        except Exception as exc:
+            await task_service.mark_failure(task, exc)
+            raise
 
         if result.stream:
             return StreamingResponse(
-                _safe_sse_stream(result.data),
+                task_service.wrap_stream(task, _safe_sse_stream(result.data)),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
         content = result.data[0] if result.data else ""
+        await task_service.mark_success(task)
         return JSONResponse(
             content=make_chat_response(request.model, content)
         )
@@ -807,28 +821,41 @@ async def chat_completions(request: ChatCompletionRequest):
                 status_code=429,
             )
 
-        result = await ImageGenerationService().generate(
-            token_mgr=token_mgr,
-            token=token,
-            model_info=model_info,
-            prompt=prompt,
-            n=n,
-            response_format=response_format,
-            size=size,
-            aspect_ratio=aspect_ratio,
-            stream=bool(is_stream),
-            chat_format=True,
+        task_service = get_media_task_service()
+        task = await task_service.create_task(
+            task_type="image",
+            source="chat_completions",
+            model=request.model,
+            endpoint="/v1/chat/completions",
         )
+
+        try:
+            result = await ImageGenerationService().generate(
+                token_mgr=token_mgr,
+                token=token,
+                model_info=model_info,
+                prompt=prompt,
+                n=n,
+                response_format=response_format,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                stream=bool(is_stream),
+                chat_format=True,
+            )
+        except Exception as exc:
+            await task_service.mark_failure(task, exc)
+            raise
 
         if result.stream:
             return StreamingResponse(
-                _safe_sse_stream(result.data),
+                task_service.wrap_stream(task, _safe_sse_stream(result.data)),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
         content = result.data[0] if result.data else ""
         usage = result.usage_override
+        await task_service.mark_success(task)
         return JSONResponse(
             content=make_chat_response(request.model, content, usage=usage)
         )
@@ -836,6 +863,13 @@ async def chat_completions(request: ChatCompletionRequest):
     if model_info and model_info.is_video:
         # 提取视频配置 (默认值在 Pydantic 模型中处理)
         v_conf = request.video_config or VideoConfig()
+        task_service = get_media_task_service()
+        task = await task_service.create_task(
+            task_type="video",
+            source="chat_completions",
+            model=request.model,
+            endpoint="/v1/chat/completions",
+        )
 
         try:
             result = await VideoService.completions(
@@ -849,6 +883,7 @@ async def chat_completions(request: ChatCompletionRequest):
                 preset=v_conf.preset,
             )
         except Exception as e:
+            await task_service.mark_failure(task, e)
             if request.stream is not False:
                 return _streaming_error_response(e)
             raise
@@ -871,10 +906,16 @@ async def chat_completions(request: ChatCompletionRequest):
             raise
 
     if isinstance(result, dict):
+        if model_info and model_info.is_video:
+            await task_service.mark_success(task)
         return JSONResponse(content=result)
     else:
         return StreamingResponse(
-            _safe_sse_stream(result),
+            (
+                task_service.wrap_stream(task, _safe_sse_stream(result))
+                if model_info and model_info.is_video
+                else _safe_sse_stream(result)
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )

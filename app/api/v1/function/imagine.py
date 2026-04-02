@@ -18,6 +18,7 @@ from app.core.logger import logger
 from app.api.v1.image import resolve_aspect_ratio
 from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.model import ModelService
+from app.services.tasks import get_media_task_service
 from app.services.token.manager import get_token_manager
 
 router = APIRouter()
@@ -159,7 +160,14 @@ async def function_imagine_ws(websocket: WebSocket):
         )
 
         sequence = 0
+        task_service = get_media_task_service()
         while not stop_event.is_set():
+            task = await task_service.create_task(
+                task_type="image",
+                source="function_imagine",
+                model=model_id,
+                endpoint="/v1/function/imagine/ws",
+            )
             try:
                 started_at = time.perf_counter()
                 await token_mgr.reload_if_stale()
@@ -172,6 +180,9 @@ async def function_imagine_ws(websocket: WebSocket):
                         break
 
                 if not token:
+                    await task_service.mark_failure(
+                        task, "No available tokens. Please try again later."
+                    )
                     await _send(
                         {
                             "type": "error",
@@ -196,6 +207,7 @@ async def function_imagine_ws(websocket: WebSocket):
                 )
                 images = [img for img in result.data if img and img != "error"]
                 if images:
+                    await task_service.mark_success(task)
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                     for img_b64 in images:
                         sequence += 1
@@ -211,6 +223,9 @@ async def function_imagine_ws(websocket: WebSocket):
                             }
                         )
                 else:
+                    await task_service.mark_failure(
+                        task, "Image generation returned empty data."
+                    )
                     await _send(
                         {
                             "type": "error",
@@ -220,8 +235,10 @@ async def function_imagine_ws(websocket: WebSocket):
                     )
 
             except asyncio.CancelledError:
+                await task_service.mark_failure(task, "cancelled")
                 break
             except Exception as e:
+                await task_service.mark_failure(task, e)
                 logger.warning(f"Imagine stream error: {e}")
                 await _send(
                     {
@@ -352,6 +369,7 @@ async def function_imagine_sse(
             token_mgr = await get_token_manager()
             sequence = 0
             run_id = uuid.uuid4().hex
+            task_service = get_media_task_service()
 
             yield (
                 f"data: {orjson.dumps({'type': 'status', 'status': 'running', 'prompt': prompt, 'aspect_ratio': ratio, 'run_id': run_id}).decode()}\n\n"
@@ -365,6 +383,12 @@ async def function_imagine_sse(
                     session_alive = await _get_session(task_id)
                     if not session_alive:
                         break
+                task = await task_service.create_task(
+                    task_type="image",
+                    source="function_imagine",
+                    model=model_id,
+                    endpoint="/v1/function/imagine/sse",
+                )
 
                 try:
                     started_at = time.perf_counter()
@@ -378,6 +402,9 @@ async def function_imagine_sse(
                             break
 
                     if not token:
+                        await task_service.mark_failure(
+                            task, "No available tokens. Please try again later."
+                        )
                         yield (
                             f"data: {orjson.dumps({'type': 'error', 'message': 'No available tokens. Please try again later.', 'code': 'rate_limit_exceeded'}).decode()}\n\n"
                         )
@@ -398,6 +425,7 @@ async def function_imagine_sse(
                     )
                     images = [img for img in result.data if img and img != "error"]
                     if images:
+                        await task_service.mark_success(task)
                         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                         for img_b64 in images:
                             sequence += 1
@@ -412,12 +440,17 @@ async def function_imagine_sse(
                             }
                             yield f"data: {orjson.dumps(payload).decode()}\n\n"
                     else:
+                        await task_service.mark_failure(
+                            task, "Image generation returned empty data."
+                        )
                         yield (
                             f"data: {orjson.dumps({'type': 'error', 'message': 'Image generation returned empty data.', 'code': 'empty_image'}).decode()}\n\n"
                         )
                 except asyncio.CancelledError:
+                    await task_service.mark_failure(task, "cancelled")
                     break
                 except Exception as e:
+                    await task_service.mark_failure(task, e)
                     logger.warning(f"Imagine SSE error: {e}")
                     yield (
                         f"data: {orjson.dumps({'type': 'error', 'message': str(e), 'code': 'internal_error'}).decode()}\n\n"

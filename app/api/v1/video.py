@@ -18,6 +18,7 @@ from app.core.exceptions import UpstreamException, ValidationException
 from app.services.grok.services.model import ModelService
 from app.services.grok.services.video import VideoService
 from app.services.grok.services.video_extend import VideoExtendService
+from app.services.tasks import get_media_task_service
 
 
 router = APIRouter(tags=["Videos"])
@@ -383,6 +384,8 @@ async def _create_video_from_payload(
     references: List[str],
     *,
     require_extension: bool = False,
+    source: str = "videos_api",
+    endpoint: str = "/v1/videos",
 ) -> JSONResponse:
     prompt = (payload.prompt or "").strip()
     if not prompt:
@@ -407,26 +410,42 @@ async def _create_video_from_payload(
     for ref in references:
         content.append({"type": "image_url", "image_url": {"url": ref}})
 
-    result = await VideoService.completions(
+    task_service = get_media_task_service()
+    task = await task_service.create_task(
+        task_type="video",
+        source=source,
         model=model,
-        messages=[{"role": "user", "content": content}],
-        stream=False,
-        reasoning_effort=None,
-        aspect_ratio=aspect_ratio,
-        video_length=seconds,
-        resolution=resolution,
-        preset="custom",
+        endpoint=endpoint,
     )
+
+    try:
+        result = await VideoService.completions(
+            model=model,
+            messages=[{"role": "user", "content": content}],
+            stream=False,
+            reasoning_effort=None,
+            aspect_ratio=aspect_ratio,
+            video_length=seconds,
+            resolution=resolution,
+            preset="custom",
+        )
+    except Exception as exc:
+        await task_service.mark_failure(task, exc)
+        raise
 
     choices = result.get("choices") if isinstance(result, dict) else None
     if not isinstance(choices, list) or not choices:
+        await task_service.mark_failure(task, "Video generation failed: empty result")
         raise UpstreamException("Video generation failed: empty result")
 
     msg = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
     rendered = msg.get("content", "") if isinstance(msg, dict) else ""
     video_url = _extract_video_url(rendered)
     if not video_url:
+        await task_service.mark_failure(task, "Video generation failed: missing video URL")
         raise UpstreamException("Video generation failed: missing video URL")
+
+    await task_service.mark_success(task)
 
     return JSONResponse(
         content=_build_create_response(
@@ -507,14 +526,26 @@ async def extend_video(request: VideoExtendDirectRequest):
     """
     Extension endpoint (non-OpenAI-compatible direct mapping).
     """
-    result = await VideoExtendService.extend(
-        prompt=request.prompt,
-        reference_id=request.reference_id,
-        start_time=request.start_time,
-        ratio=request.ratio,
-        length=request.length,
-        resolution=request.resolution,
+    task_service = get_media_task_service()
+    task = await task_service.create_task(
+        task_type="video",
+        source="videos_api",
+        model=VIDEO_MODEL_ID,
+        endpoint="/v1/video/extend",
     )
+    try:
+        result = await VideoExtendService.extend(
+            prompt=request.prompt,
+            reference_id=request.reference_id,
+            start_time=request.start_time,
+            ratio=request.ratio,
+            length=request.length,
+            resolution=request.resolution,
+        )
+    except Exception as exc:
+        await task_service.mark_failure(task, exc)
+        raise
+    await task_service.mark_success(task)
     return JSONResponse(content=result)
 
 
