@@ -210,6 +210,14 @@ table.geist-table td {
   transition: background 0.2s;
 }
 
+/* Center alignment for "Status" (4) and "Duration" (6) */
+table.geist-table th:nth-child(4),
+table.geist-table td:nth-child(4),
+table.geist-table th:nth-child(6),
+table.geist-table td:nth-child(6) {
+  text-align: center;
+}
+
 table.geist-table tbody tr {
   transition: background 0.2s;
 }
