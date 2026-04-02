@@ -26,12 +26,8 @@
           <p class="text-[var(--accents-4)] mt-1 text-sm" data-i18n="tasks.subtitle">查看图片和视频任务的运行状态与统计概览。</p>
         </div>
         <div class="toolbar-actions">
-          <div class="toolbar-meta text-sm text-[var(--accents-4)]">
-            <span data-i18n="tasks.autoRefresh">自动刷新</span>
-            <span id="refresh-label">10s</span>
-          </div>
           <button id="manual-refresh-btn" type="button" class="geist-button-outline text-sm px-3" onclick="loadTasks(true)">
-            <span data-i18n="tasks.manualRefresh">手动刷新</span>
+            <span data-i18n="tasks.manualRefresh">刷新</span>
           </button>
         </div>
       </div>
@@ -119,7 +115,7 @@
                   <th data-i18n="tasks.tableModel">模型</th>
                   <th data-i18n="tasks.tableStatus">状态</th>
                   <th data-i18n="tasks.tableStartedAt">开始时间</th>
-                  <th data-i18n="tasks.tableDuration">已运行</th>
+                  <th data-i18n="tasks.tableDuration">耗时/秒</th>
                   <th data-i18n="tasks.tableEndpoint">接口入口</th>
                 </tr>
               </thead>

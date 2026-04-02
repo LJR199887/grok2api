@@ -115,7 +115,11 @@ class MediaTaskService:
         now_ms = int(time.time() * 1000)
         for task in task_list:
             item = dict(task)
-            item["duration_ms"] = max(0, now_ms - int(item.get("created_at") or now_ms))
+            end_ms = int(item.get("completed_at") or now_ms)
+            item["duration_ms"] = max(
+                0,
+                end_ms - int(item.get("created_at") or end_ms),
+            )
             if item.get("status") == "running":
                 active_payload.append(dict(item))
 
@@ -127,7 +131,8 @@ class MediaTaskService:
                     **dict(task),
                     "duration_ms": max(
                         0,
-                        now_ms - int(task.get("created_at") or now_ms),
+                        int(task.get("completed_at") or now_ms)
+                        - int(task.get("created_at") or int(task.get("completed_at") or now_ms)),
                     ),
                 }
                 for task in task_list

@@ -1,5 +1,4 @@
 let apiKey = '';
-let pollTimer = null;
 let loading = false;
 let currentTypeFilter = 'all';
 let currentStatusFilter = 'all';
@@ -37,14 +36,8 @@ function formatDateTime(ms) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function formatDuration(ms) {
-  const seconds = Math.max(0, Math.floor((ms || 0) / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainSeconds = seconds % 60;
-  if (hours > 0) return `${hours}h ${minutes}m ${remainSeconds}s`;
-  if (minutes > 0) return `${minutes}m ${remainSeconds}s`;
-  return `${remainSeconds}s`;
+function formatDurationSeconds(ms) {
+  return String(Math.max(0, Math.round((ms || 0) / 1000)));
 }
 
 function taskTypeLabel(type) {
@@ -159,7 +152,7 @@ function renderTaskList() {
       <td class="mono-cell">${task.model || '-'}</td>
       <td><span class="task-status-badge task-status-${task.status || 'running'}">${taskStatusLabel(task.status)}</span></td>
       <td class="mono-cell">${formatDateTime(task.created_at)}</td>
-      <td class="mono-cell">${formatDuration(task.duration_ms)}</td>
+      <td class="mono-cell">${formatDurationSeconds(task.duration_ms)}</td>
       <td class="mono-cell">${task.endpoint || '-'}</td>
     </tr>
   `).join('');
@@ -223,12 +216,6 @@ async function init() {
   apiKey = await ensureAdminKey();
   if (apiKey === null) return;
   await loadTasks(false);
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => loadTasks(false), 10000);
 }
-
-window.addEventListener('beforeunload', () => {
-  if (pollTimer) clearInterval(pollTimer);
-});
 
 document.addEventListener('DOMContentLoaded', init);
