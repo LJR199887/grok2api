@@ -124,6 +124,7 @@
     "sourceChat": "Chat Completions",
     "sourceFunctionImagine": "Imagine Function",
     "sourceFunctionVideo": "Video Function",
+    "failureLogEmpty": "No failure log available.",
     "noTasks": "No matching tasks right now."
   },
   "login": {

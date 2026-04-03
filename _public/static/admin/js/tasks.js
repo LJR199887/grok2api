@@ -5,6 +5,7 @@ let currentStatusFilter = 'all';
 let currentTasks = [];
 let currentDailyStats = [];
 let currentRangeFilter = 'today';
+let failureDialogBound = false;
 
 const byId = (id) => document.getElementById(id);
 
@@ -19,6 +20,7 @@ const FALLBACK_TEXT = {
   'tasks.sourceChat': 'Chat Completions',
   'tasks.sourceFunctionImagine': 'Imagine Function',
   'tasks.sourceFunctionVideo': 'Video Function',
+  'tasks.failureLogEmpty': 'No failure log available.',
   'tasks.noTasks': 'No matching tasks right now.',
   'tasks.totalTasks': 'Total Tasks'
 };
@@ -59,6 +61,15 @@ function taskSourceLabel(source) {
     function_video: tt('tasks.sourceFunctionVideo')
   };
   return map[source] || source || '-';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function setText(id, value) {
@@ -147,15 +158,61 @@ function renderTaskList() {
   empty.classList.add('hidden');
   body.innerHTML = tasks.map(task => `
     <tr>
-      <td><span class="task-type-badge task-type-${task.task_type === 'video' ? 'video' : 'image'}">${taskTypeLabel(task.task_type)}</span></td>
-      <td>${taskSourceLabel(task.source)}</td>
-      <td class="mono-cell">${task.model || '-'}</td>
-      <td><span class="task-status-badge task-status-${task.status || 'running'}">${taskStatusLabel(task.status)}</span></td>
-      <td class="mono-cell">${formatDateTime(task.created_at)}</td>
-      <td class="mono-cell">${formatDurationSeconds(task.duration_ms)}</td>
-      <td class="mono-cell">${task.endpoint || '-'}</td>
+      <td><span class="task-type-badge task-type-${task.task_type === 'video' ? 'video' : 'image'}">${escapeHtml(taskTypeLabel(task.task_type))}</span></td>
+      <td>${escapeHtml(taskSourceLabel(task.source))}</td>
+      <td class="mono-cell">${escapeHtml(task.model || '-')}</td>
+      <td>${task.status === 'failure'
+        ? `<button type="button" class="task-status-badge task-status-button task-status-failure" data-task-id="${escapeHtml(task.task_id || '')}">${escapeHtml(taskStatusLabel(task.status))}</button>`
+        : `<span class="task-status-badge task-status-${escapeHtml(task.status || 'running')}">${escapeHtml(taskStatusLabel(task.status))}</span>`}</td>
+      <td class="mono-cell">${escapeHtml(formatDateTime(task.created_at))}</td>
+      <td class="mono-cell">${escapeHtml(formatDurationSeconds(task.duration_ms))}</td>
+      <td class="mono-cell">${escapeHtml(task.endpoint || '-')}</td>
     </tr>
   `).join('');
+}
+
+function findTaskById(taskId) {
+  return currentTasks.find((task) => String(task.task_id || '') === String(taskId || ''));
+}
+
+function ensureFailureDialogBound() {
+  if (failureDialogBound) return;
+  const closeBtn = byId('task-failure-close');
+  const dialog = byId('task-failure-dialog');
+  const body = byId('task-list-body');
+
+  if (closeBtn && dialog) {
+    closeBtn.addEventListener('click', () => dialog.close());
+  }
+
+  if (body) {
+    body.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-task-id]');
+      if (!target) return;
+      showFailureLog(target.getAttribute('data-task-id'));
+    });
+  }
+
+  failureDialogBound = true;
+}
+
+function showFailureLog(taskId) {
+  const task = findTaskById(taskId);
+  const dialog = byId('task-failure-dialog');
+  if (!task || !dialog) return;
+
+  setText('task-failure-type', taskTypeLabel(task.task_type));
+  setText('task-failure-source', taskSourceLabel(task.source));
+  setText('task-failure-model', task.model || '-');
+  setText('task-failure-time', formatDateTime(task.created_at));
+
+  const logEl = byId('task-failure-log');
+  if (logEl) {
+    const message = String(task.error_message || '').trim();
+    logEl.textContent = message || tt('tasks.failureLogEmpty') || t('common.unknownError');
+  }
+
+  dialog.showModal();
 }
 
 function setRangeFilter(value, button) {
@@ -215,6 +272,7 @@ async function loadTasks(showNotice = false) {
 async function init() {
   apiKey = await ensureAdminKey();
   if (apiKey === null) return;
+  ensureFailureDialogBound();
   await loadTasks(false);
 }
 

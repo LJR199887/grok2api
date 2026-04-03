@@ -124,6 +124,7 @@
     "sourceChat": "聊天接口",
     "sourceFunctionImagine": "Imagine 功能页",
     "sourceFunctionVideo": "Video 功能页",
+    "failureLogEmpty": "暂无失败日志。",
     "noTasks": "当前没有匹配的任务。"
   },
   "login": {
