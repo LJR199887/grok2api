@@ -18,7 +18,7 @@ from app.core.exceptions import UpstreamException, ValidationException
 from app.services.grok.services.model import ModelService
 from app.services.grok.services.video import VideoService
 from app.services.grok.services.video_extend import VideoExtendService
-from app.services.tasks import get_media_task_service
+from app.services.tasks import extract_media_result_url, get_media_task_service
 
 
 router = APIRouter(tags=["Videos"])
@@ -445,7 +445,7 @@ async def _create_video_from_payload(
         await task_service.mark_failure(task, "Video generation failed: missing video URL")
         raise UpstreamException("Video generation failed: missing video URL")
 
-    await task_service.mark_success(task)
+    await task_service.mark_success(task, result_url=video_url)
 
     return JSONResponse(
         content=_build_create_response(
@@ -545,7 +545,7 @@ async def extend_video(request: VideoExtendDirectRequest):
     except Exception as exc:
         await task_service.mark_failure(task, exc)
         raise
-    await task_service.mark_success(task)
+    await task_service.mark_success(task, result_url=extract_media_result_url(result))
     return JSONResponse(content=result)
 
 

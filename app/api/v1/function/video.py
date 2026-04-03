@@ -12,7 +12,7 @@ from app.core.auth import verify_function_key
 from app.core.logger import logger
 from app.services.grok.services.video import VideoService
 from app.services.grok.services.model import ModelService
-from app.services.tasks import get_media_task_service
+from app.services.tasks import extract_media_result_url, get_media_task_service
 
 router = APIRouter()
 
@@ -233,6 +233,8 @@ async def function_video_sse(request: Request, task_id: str = Query("")):
             endpoint="/v1/function/video/sse",
         )
         try:
+            result_url = ""
+            chunk_buffer = ""
             model_id = "grok-imagine-1.0-video"
             model_info = ModelService.get(model_id)
             if not model_info or not model_info.is_video:
@@ -272,6 +274,8 @@ async def function_video_sse(request: Request, task_id: str = Query("")):
             )
 
             async for chunk in stream:
+                chunk_buffer = f"{chunk_buffer}{chunk}"[-32768:]
+                result_url = extract_media_result_url(chunk_buffer) or result_url
                 if await request.is_disconnected():
                     await task_service.mark_failure(task, "client_disconnected")
                     break
@@ -281,7 +285,7 @@ async def function_video_sse(request: Request, task_id: str = Query("")):
                     break
                 yield chunk
             else:
-                await task_service.mark_success(task)
+                await task_service.mark_success(task, result_url=result_url or None)
         except Exception as e:
             await task_service.mark_failure(task, e)
             logger.warning(f"Function video SSE error: {e}")

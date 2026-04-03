@@ -214,7 +214,9 @@ table.geist-table td {
 table.geist-table th:nth-child(4),
 table.geist-table td:nth-child(4),
 table.geist-table th:nth-child(6),
-table.geist-table td:nth-child(6) {
+table.geist-table td:nth-child(6),
+table.geist-table th:nth-child(7),
+table.geist-table td:nth-child(7) {
   text-align: center;
 }
 
@@ -311,6 +313,43 @@ table.geist-table tbody tr:hover td {
 .task-status-button:focus-visible {
   outline: 2px solid rgba(185, 28, 28, 0.35);
   outline-offset: 2px;
+}
+
+.task-link-cell {
+  min-width: 120px;
+}
+
+.task-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, 0.18);
+  background: rgba(236, 253, 245, 0.9);
+  color: #059669;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.task-link-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.12);
+  background: #ecfdf5;
+}
+
+.task-link-button:focus-visible {
+  outline: 2px solid rgba(5, 150, 105, 0.28);
+  outline-offset: 2px;
+}
+
+.task-link-empty {
+  color: var(--accents-4);
+  font-size: 13px;
 }
 
 .mono-cell {

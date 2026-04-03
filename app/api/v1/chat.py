@@ -19,7 +19,7 @@ from app.services.grok.services.image_edit import ImageEditService
 from app.services.grok.services.model import ModelService
 from app.services.grok.services.video import VideoService
 from app.services.grok.utils.response import make_chat_response
-from app.services.tasks import get_media_task_service
+from app.services.tasks import extract_media_result_url, get_media_task_service
 from app.services.token import get_token_manager
 from app.core.config import get_config
 from app.core.exceptions import ValidationException, AppException, ErrorType
@@ -907,12 +907,19 @@ async def chat_completions(request: ChatCompletionRequest):
 
     if isinstance(result, dict):
         if model_info and model_info.is_video:
-            await task_service.mark_success(task)
+            await task_service.mark_success(
+                task,
+                result_url=extract_media_result_url(result),
+            )
         return JSONResponse(content=result)
     else:
         return StreamingResponse(
             (
-                task_service.wrap_stream(task, _safe_sse_stream(result))
+                task_service.wrap_stream(
+                    task,
+                    _safe_sse_stream(result),
+                    capture_result_url=True,
+                )
                 if model_info and model_info.is_video
                 else _safe_sse_stream(result)
             ),

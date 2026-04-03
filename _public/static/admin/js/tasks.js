@@ -20,6 +20,8 @@ const FALLBACK_TEXT = {
   'tasks.sourceChat': 'Chat Completions',
   'tasks.sourceFunctionImagine': 'Imagine Function',
   'tasks.sourceFunctionVideo': 'Video Function',
+  'tasks.tableAssetLink': 'Public Link',
+  'tasks.openAssetLink': 'Open',
   'tasks.failureLogEmpty': 'No failure log available.',
   'tasks.noTasks': 'No matching tasks right now.',
   'tasks.totalTasks': 'Total Tasks'
@@ -75,6 +77,12 @@ function escapeHtml(value) {
 function setText(id, value) {
   const element = byId(id);
   if (element) element.textContent = value;
+}
+
+function renderTaskResultLink(task) {
+  const url = String(task?.result_url || '').trim();
+  if (!url) return '<span class="task-link-empty">-</span>';
+  return `<a class="task-link-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer noopener" title="${escapeHtml(url)}">${escapeHtml(tt('tasks.openAssetLink'))}</a>`;
 }
 
 function setButtonLoading(isLoading) {
@@ -166,6 +174,7 @@ function renderTaskList() {
         : `<span class="task-status-badge task-status-${escapeHtml(task.status || 'running')}">${escapeHtml(taskStatusLabel(task.status))}</span>`}</td>
       <td class="mono-cell">${escapeHtml(formatDateTime(task.created_at))}</td>
       <td class="mono-cell">${escapeHtml(formatDurationSeconds(task.duration_ms))}</td>
+      <td class="task-link-cell">${renderTaskResultLink(task)}</td>
       <td class="mono-cell">${escapeHtml(task.endpoint || '-')}</td>
     </tr>
   `).join('');

@@ -858,7 +858,8 @@ class SQLStorage(BaseStorage):
                         created_at BIGINT NOT NULL,
                         updated_at BIGINT NOT NULL,
                         completed_at BIGINT,
-                        error_message TEXT
+                        error_message TEXT,
+                        result_url TEXT
                     )
                 """)
                 )
@@ -934,6 +935,25 @@ class SQLStorage(BaseStorage):
                             await conn.execute(
                                 text(
                                     f"ALTER TABLE tokens ADD COLUMN {col_name} {col_type}"
+                                )
+                            )
+                        except Exception:
+                            pass
+
+                media_task_columns = [("result_url", "TEXT")]
+                if self.dialect in ("postgres", "postgresql", "pgsql"):
+                    for col_name, col_type in media_task_columns:
+                        await conn.execute(
+                            text(
+                                f"ALTER TABLE media_tasks ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                            )
+                        )
+                else:
+                    for col_name, col_type in media_task_columns:
+                        try:
+                            await conn.execute(
+                                text(
+                                    f"ALTER TABLE media_tasks ADD COLUMN {col_name} {col_type}"
                                 )
                             )
                         except Exception:
@@ -1550,8 +1570,8 @@ class SQLStorage(BaseStorage):
             async with self.async_session() as session:
                 if self.dialect in ("mysql", "mariadb"):
                     stmt = text(
-                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
-                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message) "
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message, :result_url) "
                         "ON DUPLICATE KEY UPDATE "
                         "task_type=VALUES(task_type), "
                         "source=VALUES(source), "
@@ -1561,12 +1581,13 @@ class SQLStorage(BaseStorage):
                         "created_at=VALUES(created_at), "
                         "updated_at=VALUES(updated_at), "
                         "completed_at=VALUES(completed_at), "
-                        "error_message=VALUES(error_message)"
+                        "error_message=VALUES(error_message), "
+                        "result_url=VALUES(result_url)"
                     )
                 elif self.dialect in ("postgres", "postgresql", "pgsql"):
                     stmt = text(
-                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
-                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message) "
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message, :result_url) "
                         "ON CONFLICT (task_id) DO UPDATE SET "
                         "task_type=EXCLUDED.task_type, "
                         "source=EXCLUDED.source, "
@@ -1576,12 +1597,13 @@ class SQLStorage(BaseStorage):
                         "created_at=EXCLUDED.created_at, "
                         "updated_at=EXCLUDED.updated_at, "
                         "completed_at=EXCLUDED.completed_at, "
-                        "error_message=EXCLUDED.error_message"
+                        "error_message=EXCLUDED.error_message, "
+                        "result_url=EXCLUDED.result_url"
                     )
                 else:
                     stmt = text(
-                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
-                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message)"
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message, :result_url)"
                     )
                 await session.execute(stmt, record)
                 await session.commit()
@@ -1601,7 +1623,7 @@ class SQLStorage(BaseStorage):
 
         try:
             query = (
-                "SELECT task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message "
+                "SELECT task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url "
                 "FROM media_tasks WHERE 1=1"
             )
             params: Dict[str, Any] = {}
@@ -1640,6 +1662,7 @@ class SQLStorage(BaseStorage):
                         "updated_at": row[7],
                         "completed_at": row[8],
                         "error_message": row[9],
+                        "result_url": row[10],
                     }
                 )
             return _filter_media_tasks(

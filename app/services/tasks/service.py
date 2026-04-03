@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -8,6 +9,61 @@ from app.core.storage import get_storage
 
 
 TaskDisconnectChecker = Callable[[], Awaitable[bool]]
+
+_MARKDOWN_VIDEO_URL_RE = re.compile(r"\[video\]\(([^)\s]+)\)")
+_HTML_SOURCE_URL_RE = re.compile(r"""<source[^>]+src=["']([^"']+)["']""")
+_GENERIC_HTTP_URL_RE = re.compile(r"""https?://[^\s"'<>]+""")
+
+
+def extract_media_result_url(payload: Any) -> str:
+    if payload is None:
+        return ""
+
+    if isinstance(payload, dict):
+        direct_url = payload.get("url")
+        if isinstance(direct_url, str) and direct_url.strip():
+            return direct_url.strip()
+
+        choices = payload.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                message = choice.get("message")
+                if isinstance(message, dict):
+                    content = extract_media_result_url(message.get("content"))
+                    if content:
+                        return content
+                delta = choice.get("delta")
+                if isinstance(delta, dict):
+                    content = extract_media_result_url(delta.get("content"))
+                    if content:
+                        return content
+
+    if isinstance(payload, (list, tuple)):
+        for item in payload:
+            url = extract_media_result_url(item)
+            if url:
+                return url
+        return ""
+
+    text = str(payload).strip()
+    if not text:
+        return ""
+
+    md_match = _MARKDOWN_VIDEO_URL_RE.search(text)
+    if md_match:
+        return md_match.group(1).strip()
+
+    html_match = _HTML_SOURCE_URL_RE.search(text)
+    if html_match:
+        return html_match.group(1).strip()
+
+    url_match = _GENERIC_HTTP_URL_RE.search(text)
+    if url_match:
+        return url_match.group(0).strip().rstrip(".,)")
+
+    return ""
 
 
 class MediaTaskService:
@@ -34,12 +90,23 @@ class MediaTaskService:
             "updated_at": now,
             "completed_at": None,
             "error_message": None,
+            "result_url": None,
         }
         await self.storage.upsert_media_task(record)
         return record
 
-    async def mark_success(self, task: str | Dict[str, Any]):
-        record = await self._get_updated_record(task, status="success", error_message=None)
+    async def mark_success(
+        self,
+        task: str | Dict[str, Any],
+        *,
+        result_url: Optional[str] = None,
+    ):
+        record = await self._get_updated_record(
+            task,
+            status="success",
+            error_message=None,
+            result_url=result_url,
+        )
         record["completed_at"] = record["updated_at"]
         await self.storage.upsert_media_task(record)
         return record
@@ -49,6 +116,7 @@ class MediaTaskService:
             task,
             status="failure",
             error_message=self._stringify_error(error),
+            result_url=None,
         )
         record["completed_at"] = record["updated_at"]
         await self.storage.upsert_media_task(record)
@@ -61,18 +129,26 @@ class MediaTaskService:
         *,
         disconnect_checker: Optional[TaskDisconnectChecker] = None,
         cancel_message: str = "cancelled",
+        capture_result_url: bool = False,
     ) -> AsyncGenerator[str, None]:
         record = await self._coerce_task(task)
         finished = False
+        result_url = str(record.get("result_url") or "").strip() or None
+        chunk_buffer = ""
         try:
             async for chunk in stream:
+                if capture_result_url:
+                    chunk_buffer = f"{chunk_buffer}{chunk}"[-32768:]
+                    extracted = extract_media_result_url(chunk_buffer)
+                    if extracted:
+                        result_url = extracted
                 if disconnect_checker and await disconnect_checker():
                     await self.mark_failure(record, "client_disconnected")
                     finished = True
                     break
                 yield chunk
             if not finished:
-                await self.mark_success(record)
+                await self.mark_success(record, result_url=result_url)
         except asyncio.CancelledError:
             await self.mark_failure(record, cancel_message)
             raise
@@ -147,12 +223,14 @@ class MediaTaskService:
         *,
         status: str,
         error_message: Optional[str],
+        result_url: Optional[str],
     ) -> Dict[str, Any]:
         record = await self._coerce_task(task)
         updated = dict(record)
         updated["status"] = status
         updated["updated_at"] = int(time.time() * 1000)
         updated["error_message"] = error_message
+        updated["result_url"] = (result_url or "").strip() or None
         return updated
 
     async def _coerce_task(self, task: str | Dict[str, Any]) -> Dict[str, Any]:
