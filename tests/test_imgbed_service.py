@@ -85,6 +85,79 @@ def test_download_service_resolve_url_uses_imgbed(monkeypatch):
     assert result == "https://imgbed.example/image"
 
 
+def test_imgbed_upload_bytes_uses_multipart_not_files(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.grok.utils.imgbed.get_config",
+        lambda key, default=None: {
+            "imgbed.enabled": True,
+            "imgbed.upload_api_url": "https://demo.example/upload",
+            "imgbed.auth_code": "secret-token",
+            "imgbed.upload_folder": "",
+            "asset.upload_timeout": 60,
+            "proxy.browser": None,
+            "proxy.base_proxy_url": "",
+        }.get(key, default),
+    )
+    monkeypatch.setattr(
+        "app.services.grok.utils.imgbed.get_current_proxy_from",
+        lambda key: (None, None),
+    )
+    monkeypatch.setattr(
+        "app.services.grok.utils.imgbed.build_http_proxies",
+        lambda proxy_url: None,
+    )
+
+    class FakeMime:
+        def __init__(self):
+            self.parts = []
+            self.closed = False
+
+        def addpart(self, **kwargs):
+            self.parts.append(kwargs)
+
+        def close(self):
+            self.closed = True
+
+    created = {}
+
+    def fake_mime_factory():
+        mime = FakeMime()
+        created["mime"] = mime
+        return mime
+
+    monkeypatch.setattr("app.services.grok.utils.imgbed.curl_cffi.CurlMime", fake_mime_factory)
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return [{"src": "/file/uploaded.png"}]
+
+    class FakeSession:
+        def __init__(self):
+            self.calls = []
+
+        async def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return FakeResponse()
+
+    service = ImgBedUploadService()
+    fake_session = FakeSession()
+
+    async def fake_create():
+        return fake_session
+
+    monkeypatch.setattr(service, "create", fake_create)
+
+    result = asyncio.run(service.upload_bytes("demo.png", b"png-bytes", "image/png"))
+
+    assert result == "https://demo.example/file/uploaded.png"
+    assert "multipart" in fake_session.calls[0][1]
+    assert "files" not in fake_session.calls[0][1]
+    assert created["mime"].parts[0]["name"] == "file"
+    assert created["mime"].closed is True
+
+
 def test_image_collect_processor_uploads_only_final_images(monkeypatch):
     class FakeImgBed:
         async def upload_from_source(self, source, token, media_type):

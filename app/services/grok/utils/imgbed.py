@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
+import curl_cffi
+
 from app.core.config import get_config
 from app.core.exceptions import UpstreamException, ValidationException
 from app.core.logger import logger
@@ -205,14 +207,24 @@ class ImgBedUploadService:
             nonlocal active_proxy_key
             active_proxy_key, proxy_url = get_current_proxy_from("proxy.base_proxy_url")
             proxies = build_http_proxies(proxy_url)
-            response = await session.post(
-                upload_api_url,
-                params=params,
-                files={"file": (filename, content, mime)},
-                proxies=proxies,
-                timeout=timeout,
-                impersonate=browser,
+            multipart = curl_cffi.CurlMime()
+            multipart.addpart(
+                name="file",
+                content_type=mime,
+                filename=filename,
+                data=content,
             )
+            try:
+                response = await session.post(
+                    upload_api_url,
+                    params=params,
+                    multipart=multipart,
+                    proxies=proxies,
+                    timeout=timeout,
+                    impersonate=browser,
+                )
+            finally:
+                multipart.close()
             if response.status_code < 200 or response.status_code >= 300:
                 raise UpstreamException(
                     f"ImgBed upload failed, {response.status_code}",
