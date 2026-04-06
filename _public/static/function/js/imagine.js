@@ -173,11 +173,14 @@
   }
 
   function normalizeImageSource(raw) {
-    const isDataUrl = typeof raw === 'string' && raw.startsWith('data:');
-    const looksLikeBase64 = typeof raw === 'string' && isLikelyBase64(raw);
-    const isHttpUrl = typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://') || (raw.startsWith('/') && !looksLikeBase64));
-    const mime = isDataUrl || isHttpUrl ? '' : inferMime(raw);
-    const src = isDataUrl || isHttpUrl ? raw : `data:${mime};base64,${raw}`;
+    const value = typeof raw === 'string'
+      ? raw.trim().replace(/\\\//g, '/').replace(/(?:\\n|\\r|\\t|\/n|\/r|\/t)+$/g, '').trim().replace(/^['"]+|['"]+$/g, '')
+      : '';
+    const isDataUrl = value.startsWith('data:');
+    const looksLikeBase64 = isLikelyBase64(value);
+    const isHttpUrl = value.startsWith('http://') || value.startsWith('https://') || (value.startsWith('/') && !looksLikeBase64);
+    const mime = isDataUrl || isHttpUrl ? '' : inferMime(value);
+    const src = isDataUrl || isHttpUrl ? value : `data:${mime};base64,${value}`;
     return { src, mime, isHttpUrl };
   }
 

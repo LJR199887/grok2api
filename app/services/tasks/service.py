@@ -13,6 +13,18 @@ TaskDisconnectChecker = Callable[[], Awaitable[bool]]
 _MARKDOWN_VIDEO_URL_RE = re.compile(r"\[video\]\(([^)\s]+)\)")
 _HTML_SOURCE_URL_RE = re.compile(r"""<source[^>]+src=["']([^"']+)["']""")
 _GENERIC_HTTP_URL_RE = re.compile(r"""https?://[^\s"'<>]+""")
+_TRAILING_ESCAPE_SUFFIX_RE = re.compile(r"""(?:\\[nrt]|/[nrt])+$""")
+
+
+def _normalize_media_url(value: Any) -> str:
+    text = str(value or "").strip().strip("\"'")
+    if not text:
+        return ""
+    text = text.replace("\\/", "/")
+    text = _TRAILING_ESCAPE_SUFFIX_RE.sub("", text)
+    text = text.rstrip("\\")
+    text = text.rstrip(".,)")
+    return text.strip().strip("\"'")
 
 
 def extract_media_result_url(payload: Any) -> str:
@@ -21,8 +33,10 @@ def extract_media_result_url(payload: Any) -> str:
 
     if isinstance(payload, dict):
         direct_url = payload.get("url")
-        if isinstance(direct_url, str) and direct_url.strip():
-            return direct_url.strip()
+        if isinstance(direct_url, str):
+            normalized = _normalize_media_url(direct_url)
+            if normalized:
+                return normalized
 
         choices = payload.get("choices")
         if isinstance(choices, list):
@@ -53,15 +67,15 @@ def extract_media_result_url(payload: Any) -> str:
 
     md_match = _MARKDOWN_VIDEO_URL_RE.search(text)
     if md_match:
-        return md_match.group(1).strip()
+        return _normalize_media_url(md_match.group(1))
 
     html_match = _HTML_SOURCE_URL_RE.search(text)
     if html_match:
-        return html_match.group(1).strip()
+        return _normalize_media_url(html_match.group(1))
 
     url_match = _GENERIC_HTTP_URL_RE.search(text)
     if url_match:
-        return url_match.group(0).strip().rstrip(".,)")
+        return _normalize_media_url(url_match.group(0))
 
     return ""
 

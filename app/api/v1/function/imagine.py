@@ -19,7 +19,7 @@ from app.api.v1.image import resolve_aspect_ratio
 from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.model import ModelService
 from app.services.grok.utils.imgbed import ImgBedUploadService
-from app.services.tasks import get_media_task_service
+from app.services.tasks import extract_media_result_url, get_media_task_service
 from app.services.token.manager import get_token_manager
 
 router = APIRouter()
@@ -207,7 +207,16 @@ async def function_imagine_ws(websocket: WebSocket):
                     stream=False,
                     enable_nsfw=nsfw,
                 )
-                images = [img for img in result.data if img and img != "error"]
+                images = []
+                for item in result.data:
+                    if not item or item == "error":
+                        continue
+                    if response_format == "url":
+                        value = extract_media_result_url(item)
+                    else:
+                        value = str(item).strip()
+                    if value and value != "error":
+                        images.append(value)
                 if images:
                     result_url = images[0] if response_format == "url" else None
                     await task_service.mark_success(task, result_url=result_url)
@@ -426,7 +435,16 @@ async def function_imagine_sse(
                         stream=False,
                         enable_nsfw=nsfw,
                     )
-                    images = [img for img in result.data if img and img != "error"]
+                    images = []
+                    for item in result.data:
+                        if not item or item == "error":
+                            continue
+                        if response_format == "url":
+                            value = extract_media_result_url(item)
+                        else:
+                            value = str(item).strip()
+                        if value and value != "error":
+                            images.append(value)
                     if images:
                         result_url = images[0] if response_format == "url" else None
                         await task_service.mark_success(task, result_url=result_url)
