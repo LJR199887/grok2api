@@ -172,6 +172,15 @@
     return 'image/jpeg';
   }
 
+  function normalizeImageSource(raw) {
+    const isDataUrl = typeof raw === 'string' && raw.startsWith('data:');
+    const looksLikeBase64 = typeof raw === 'string' && isLikelyBase64(raw);
+    const isHttpUrl = typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://') || (raw.startsWith('/') && !looksLikeBase64));
+    const mime = isDataUrl || isHttpUrl ? '' : inferMime(raw);
+    const src = isDataUrl || isHttpUrl ? raw : `data:${mime};base64,${raw}`;
+    return { src, mime, isHttpUrl };
+  }
+
   function estimateBase64Bytes(raw) {
     if (!raw) return null;
     if (raw.startsWith('http://') || raw.startsWith('https://')) {
@@ -293,22 +302,23 @@
     }
   }
 
-  function downloadImage(base64, filename) {
-    const mime = inferMime(base64);
-    const dataUrl = `data:${mime};base64,${base64}`;
+  function downloadImage(raw, filename) {
+    const { src } = normalizeImageSource(raw);
     const link = document.createElement('a');
-    link.href = dataUrl;
+    link.href = src;
     link.download = filename;
+    link.target = '_blank';
+    link.rel = 'noopener';
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   }
 
-  function appendImage(base64, meta) {
+  function appendImage(raw, meta) {
     if (!waterfall) return;
     if (autoFilterToggle && autoFilterToggle.checked) {
-      const bytes = estimateBase64Bytes(base64 || '');
+      const bytes = estimateBase64Bytes(raw || '');
       const minBytes = getFinalMinBytes();
       if (bytes !== null && bytes < minBytes) {
         return;
@@ -328,8 +338,8 @@
     img.loading = 'lazy';
     img.decoding = 'async';
     img.alt = meta && meta.sequence ? `image-${meta.sequence}` : 'image';
-    const mime = inferMime(base64);
-    const dataUrl = `data:${mime};base64,${base64}`;
+    const { src, mime, isHttpUrl } = normalizeImageSource(raw);
+    const dataUrl = src;
     img.src = dataUrl;
 
     const metaBar = document.createElement('div');
@@ -384,12 +394,12 @@
       const ext = mime === 'image/png' ? 'png' : 'jpg';
       const filename = `imagine_${timestamp}_${seq}.${ext}`;
       
-      if (useFileSystemAPI && directoryHandle) {
-        saveToFileSystem(base64, filename).catch(() => {
-          downloadImage(base64, filename);
+      if (!isHttpUrl && useFileSystemAPI && directoryHandle) {
+        saveToFileSystem(raw, filename).catch(() => {
+          downloadImage(raw, filename);
         });
       } else {
-        downloadImage(base64, filename);
+        downloadImage(raw, filename);
       }
     }
   }
@@ -421,11 +431,7 @@
       }
     }
 
-    const isDataUrl = typeof raw === 'string' && raw.startsWith('data:');
-    const looksLikeBase64 = typeof raw === 'string' && isLikelyBase64(raw);
-    const isHttpUrl = typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://') || (raw.startsWith('/') && !looksLikeBase64));
-    const mime = isDataUrl || isHttpUrl ? '' : inferMime(raw);
-    const dataUrl = isDataUrl || isHttpUrl ? raw : `data:${mime};base64,${raw}`;
+      const { src: dataUrl, mime, isHttpUrl } = normalizeImageSource(raw);
 
     let item = imageId ? streamImageMap.get(imageId) : null;
     let isNew = false;
@@ -519,9 +525,13 @@
       const filename = `imagine_${timestamp}_${imageId || streamSequence}.${ext}`;
 
       if (useFileSystemAPI && directoryHandle) {
-        saveToFileSystem(raw, filename).catch(() => {
+        if (!isHttpUrl) {
+          saveToFileSystem(raw, filename).catch(() => {
+            downloadImage(raw, filename);
+          });
+        } else {
           downloadImage(raw, filename);
-        });
+        }
       } else {
         downloadImage(raw, filename);
       }
@@ -550,7 +560,7 @@
       updateCount(imageCount);
       updateLatency(data.elapsed_ms);
       updateError('');
-      appendImage(data.b64_json, data);
+      appendImage(data.b64_json || data.url || data.image, data);
     } else if (data.type === 'status') {
       if (data.status === 'running') {
         setStatus('connected', t('common.generating'));

@@ -772,13 +772,20 @@ async def chat_completions(request: ChatCompletionRequest):
 
         if result.stream:
             return StreamingResponse(
-                task_service.wrap_stream(task, _safe_sse_stream(result.data)),
+                task_service.wrap_stream(
+                    task,
+                    _safe_sse_stream(result.data),
+                    capture_result_url=(response_format == "url"),
+                ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
         content = result.data[0] if result.data else ""
-        await task_service.mark_success(task)
+        await task_service.mark_success(
+            task,
+            result_url=extract_media_result_url(content) if response_format == "url" else None,
+        )
         return JSONResponse(
             content=make_chat_response(request.model, content)
         )
@@ -848,14 +855,21 @@ async def chat_completions(request: ChatCompletionRequest):
 
         if result.stream:
             return StreamingResponse(
-                task_service.wrap_stream(task, _safe_sse_stream(result.data)),
+                task_service.wrap_stream(
+                    task,
+                    _safe_sse_stream(result.data),
+                    capture_result_url=(response_format == "url"),
+                ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
         content = result.data[0] if result.data else ""
         usage = result.usage_override
-        await task_service.mark_success(task)
+        await task_service.mark_success(
+            task,
+            result_url=extract_media_result_url(content) if response_format == "url" else None,
+        )
         return JSONResponse(
             content=make_chat_response(request.model, content, usage=usage)
         )
