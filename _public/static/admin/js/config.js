@@ -142,6 +142,15 @@ const LOCALE_MAP = {
   },
 
 
+  "imgbed": {
+    "label": "鍥惧簥閰嶇疆",
+    "enabled": { title: "鍚敤鍥句紶妯″紡", desc: "寮€鍚悗锛屾渶缁堝浘鐗囥€佽棰戝拰缂╃暐鍥句細鍏堜笂浼犲埌 CloudFlare ImgBed锛屽啀杩斿洖澶栭摼銆?" },
+    "upload_api_url": { title: "涓婁紶 API 鍦板潃", desc: "璇峰～鍐欑湡瀹炰笂浼犵鐐癸紙渚嬪 https://your.domain/upload锛夛紝涓嶆槸鏂囨。椤?.../api/upload.html銆?" },
+    "auth_code": { title: "authCode 瀵嗛挜", desc: "CloudFlare ImgBed 涓婁紶鎺ュ彛浣跨敤鐨?authCode銆?" },
+    "upload_folder": { title: "涓婁紶鐩綍", desc: "鍙€夛紝瀵瑰簲 ImgBed 鐨?uploadFolder 鍙傛暟锛涚暀绌哄垯浣跨敤榛樿鐩綍銆?" }
+  },
+
+
   "voice": {
     "label": "语音配置",
     "timeout": { title: "请求超时", desc: "Voice 请求超时时间（秒）。" }
@@ -533,7 +542,7 @@ function buildFieldCard(section, key, val) {
     built = buildJsonInput(section, key, val);
   }
   else {
-    if (key === 'api_key' || key === 'app_key' || key === 'function_key') {
+    if (key === 'api_key' || key === 'app_key' || key === 'function_key' || key === 'auth_code') {
       built = buildSecretInput(section, key, val);
     } else {
       built = buildTextInput(section, key, val);
@@ -611,6 +620,23 @@ async function saveConfig() {
       const url = String(newConfig.proxy.flaresolverr_url || '').trim();
       if (!url) {
         showToast(t('config.flaresolverrRequired'), 'error');
+        btn.disabled = false;
+        btn.innerText = originalText;
+        return;
+      }
+    }
+
+    if (newConfig.imgbed && newConfig.imgbed.enabled) {
+      const uploadApiUrl = String(newConfig.imgbed.upload_api_url || '').trim();
+      const authCode = String(newConfig.imgbed.auth_code || '').trim();
+      if (!uploadApiUrl) {
+        showToast('ImgBed upload_api_url is required', 'error');
+        btn.disabled = false;
+        btn.innerText = originalText;
+        return;
+      }
+      if (!authCode) {
+        showToast('ImgBed auth_code is required', 'error');
         btn.disabled = false;
         btn.innerText = originalText;
         return;
