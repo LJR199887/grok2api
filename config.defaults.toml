@@ -206,13 +206,7 @@ delete_timeout = 60
 # 资产删除批次大小（Token 维度）
 delete_batch_size = 50
 
-# ==================== ImgBed 閰嶇疆 ====================
-[imgbed]
-enabled = false
-upload_api_url = ""
-auth_code = ""
-upload_folder = ""
-
+# ==================== NSFW ====================
 [nsfw]
 # NSFW 批量开启并发上限
 concurrent = 60

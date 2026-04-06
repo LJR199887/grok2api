@@ -18,7 +18,6 @@ from app.core.logger import logger
 from app.core.storage import DATA_DIR
 from app.core.config import get_config
 from app.core.exceptions import AppException
-from app.services.grok.utils.imgbed import ImgBedUploadService
 from app.services.reverse.assets_download import AssetsDownloadReverse
 from app.services.reverse.utils.session import ResettableSession
 from app.services.grok.utils.locks import _get_download_semaphore, _file_lock
@@ -29,7 +28,6 @@ class DownloadService:
 
     def __init__(self):
         self._session: Optional[ResettableSession] = None
-        self._imgbed_service: Optional[ImgBedUploadService] = None
         base_dir = DATA_DIR / "tmp"
         self.image_dir = base_dir / "image"
         self.video_dir = base_dir / "video"
@@ -52,25 +50,10 @@ class DownloadService:
         if self._session:
             await self._session.close()
             self._session = None
-        if self._imgbed_service:
-            await self._imgbed_service.close()
-            self._imgbed_service = None
-
-    def _get_imgbed(self) -> ImgBedUploadService:
-        if self._imgbed_service is None:
-            self._imgbed_service = ImgBedUploadService()
-        return self._imgbed_service
 
     async def resolve_url(
         self, path_or_url: str, token: str, media_type: str = "image"
     ) -> str:
-        if ImgBedUploadService.is_enabled():
-            return await self._get_imgbed().upload_from_source(
-                path_or_url,
-                token,
-                media_type,
-            )
-
         asset_url = path_or_url
         path = path_or_url
         parsed = None
@@ -106,8 +89,6 @@ class DownloadService:
             final_url = await self.resolve_url(url, token, "image")
             return f"![{image_id}]({final_url})"
         except Exception as e:
-            if ImgBedUploadService.is_enabled():
-                raise
             logger.warning(f"Image render failed, fallback to URL: {e}")
             final_url = await self.resolve_url(url, token, "image")
             return f"![{image_id}]({final_url})"

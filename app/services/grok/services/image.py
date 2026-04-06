@@ -16,7 +16,6 @@ from app.core.config import get_config
 from app.core.logger import logger
 from app.core.storage import DATA_DIR
 from app.core.exceptions import AppException, ErrorType, UpstreamException
-from app.services.grok.utils.imgbed import ImgBedUploadService
 from app.services.grok.utils.process import BaseProcessor
 from app.services.grok.utils.retry import pick_token, rate_limited
 from app.services.grok.utils.response import make_response_id, make_chat_chunk, wrap_image_content
@@ -580,18 +579,6 @@ class ImageWSBaseProcessor(BaseProcessor):
         else:
             self.response_field = "b64_json"
         self._image_dir: Optional[Path] = None
-        self._imgbed_service: Optional[ImgBedUploadService] = None
-
-    async def close(self):
-        await super().close()
-        if self._imgbed_service:
-            await self._imgbed_service.close()
-            self._imgbed_service = None
-
-    def _get_imgbed(self) -> ImgBedUploadService:
-        if self._imgbed_service is None:
-            self._imgbed_service = ImgBedUploadService()
-        return self._imgbed_service
 
     def _ensure_image_dir(self) -> Path:
         if self._image_dir is None:
@@ -658,19 +645,6 @@ class ImageWSBaseProcessor(BaseProcessor):
         await asyncio.to_thread(_write_file)
         return self._build_file_url(filename)
 
-    async def _save_or_upload_blob(
-        self, image_id: str, blob: str, is_final: bool, ext: Optional[str] = None
-    ) -> str:
-        local_url = await self._save_blob(image_id, blob, is_final, ext=ext)
-        if (
-            not local_url
-            or not is_final
-            or self.response_format != "url"
-            or not ImgBedUploadService.is_enabled()
-        ):
-            return local_url
-        return await self._get_imgbed().upload_from_source(local_url, self.token, "image")
-
     def _pick_best(self, existing: Optional[Dict], incoming: Dict) -> Dict:
         if not existing:
             return incoming
@@ -685,7 +659,7 @@ class ImageWSBaseProcessor(BaseProcessor):
     async def _to_output(self, image_id: str, item: Dict) -> str:
         try:
             if self.response_format == "url":
-                return await self._save_or_upload_blob(
+                return await self._save_blob(
                     image_id,
                     item.get("blob", ""),
                     item.get("is_final", False),
@@ -871,7 +845,7 @@ class ImageWSStreamProcessor(ImageWSBaseProcessor):
                 # Keep original imagine image name for imagine chat stream output.
                 if self.model != "grok-imagine-1.0-fast":
                     final_image_id = f"{image_id}-final"
-                output = await self._save_or_upload_blob(
+                output = await self._save_blob(
                     final_image_id,
                     item.get("blob", ""),
                     item.get("is_final", False),
