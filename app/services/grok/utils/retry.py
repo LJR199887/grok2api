@@ -41,11 +41,8 @@ async def pick_token(
 def rate_limited(error: Exception) -> bool:
     if not isinstance(error, UpstreamException):
         return False
-    details = error.details or {}
-    if details.get("source") == "imgbed":
-        return False
-    status = details.get("status")
-    code = details.get("error_code")
+    status = error.details.get("status") if error.details else None
+    code = error.details.get("error_code") if error.details else None
     return status == 429 or code == "rate_limit_exceeded"
 
 

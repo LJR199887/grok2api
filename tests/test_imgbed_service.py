@@ -2,14 +2,9 @@ import asyncio
 import tomllib
 from pathlib import Path
 
-import pytest
-
-from app.core.exceptions import UpstreamException
-from app.services.grok.services.image_edit import ImageCollectProcessor
 from app.services.grok.services.image import ImageWSCollectProcessor
 from app.services.grok.utils.download import DownloadService
 from app.services.grok.utils.imgbed import ImgBedUploadService
-from app.services.grok.utils.retry import rate_limited
 
 
 def test_config_defaults_include_imgbed_section():
@@ -119,56 +114,3 @@ def test_image_collect_processor_uploads_only_final_images(monkeypatch):
 
     assert final_output == "https://imgbed.example/final.png"
     assert partial_output == "/v1/files/image/preview-image.png"
-
-
-def test_image_collect_processor_raises_imgbed_error(monkeypatch):
-    monkeypatch.setattr(ImgBedUploadService, "is_enabled", staticmethod(lambda: True))
-
-    processor = ImageWSCollectProcessor("grok-imagine-1.0", "tok", response_format="url")
-
-    async def fake_save_or_upload_blob(image_id, blob, is_final, ext=None):
-        raise UpstreamException(
-            "ImgBed upload failed, 429",
-            details={"status": 429, "source": "imgbed"},
-        )
-
-    monkeypatch.setattr(processor, "_save_or_upload_blob", fake_save_or_upload_blob)
-
-    with pytest.raises(UpstreamException, match="ImgBed upload failed, 429"):
-        asyncio.run(
-            processor._to_output(
-                "final-image",
-                {"blob": "ignored", "is_final": True, "ext": "png"},
-            )
-        )
-
-
-def test_app_chat_image_collect_processor_raises_imgbed_error(monkeypatch):
-    monkeypatch.setattr(ImgBedUploadService, "is_enabled", staticmethod(lambda: True))
-
-    processor = ImageCollectProcessor("grok-imagine-1.0", "tok", response_format="url")
-
-    async def fake_process_url(path, media_type="image"):
-        raise UpstreamException(
-            "ImgBed upload failed, 429",
-            details={"status": 429, "source": "imgbed"},
-        )
-
-    async def response():
-        yield (
-            b'data: {"result":{"response":{"modelResponse":{"generatedImageUrls":'
-            b'["https://assets.grok.com/demo.png"]}}}}\n\n'
-        )
-
-    monkeypatch.setattr(processor, "process_url", fake_process_url)
-
-    with pytest.raises(UpstreamException, match="ImgBed upload failed, 429"):
-        asyncio.run(processor.process(response()))
-
-
-def test_rate_limited_ignores_imgbed_429():
-    err = UpstreamException(
-        "ImgBed upload failed, 429",
-        details={"status": 429, "source": "imgbed"},
-    )
-    assert rate_limited(err) is False

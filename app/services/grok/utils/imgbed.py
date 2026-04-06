@@ -156,7 +156,7 @@ class ImgBedUploadService:
         if not src:
             raise UpstreamException(
                 "ImgBed upload failed: missing src in response",
-                details={"payload": payload, "source": "imgbed"},
+                details={"payload": payload},
             )
 
         parsed = urlparse(src)
@@ -216,7 +216,7 @@ class ImgBedUploadService:
             if response.status_code < 200 or response.status_code >= 300:
                 raise UpstreamException(
                     f"ImgBed upload failed, {response.status_code}",
-                    details={"status": response.status_code, "source": "imgbed"},
+                    details={"status": response.status_code},
                 )
             return response
 
@@ -231,11 +231,7 @@ class ImgBedUploadService:
             logger.error(f"ImgBed upload returned invalid JSON: {exc}")
             raise UpstreamException(
                 "ImgBed upload failed: invalid JSON response",
-                details={
-                    "status": response.status_code,
-                    "error": str(exc),
-                    "source": "imgbed",
-                },
+                details={"status": response.status_code, "error": str(exc)},
             )
 
         final_url = self._extract_uploaded_url(upload_api_url, payload)
