@@ -48,10 +48,6 @@ def _is_imgbed_error(error: Exception) -> bool:
     )
 
 
-def _should_raise_imgbed_batch_error(response_format: str) -> bool:
-    return response_format == "url" and ImgBedUploadService.is_enabled()
-
-
 @dataclass
 class ImageEditResult:
     stream: bool
@@ -243,7 +239,7 @@ class ImageEditService:
             all_images: List[str] = []
             for result in results:
                 if isinstance(result, Exception):
-                    if _is_imgbed_error(result) or _should_raise_imgbed_batch_error(response_format):
+                    if _is_imgbed_error(result):
                         raise result
                     logger.error(f"Concurrent call failed: {result}")
                     last_error = result

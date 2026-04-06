@@ -48,10 +48,6 @@ def _is_imgbed_error(error: Exception) -> bool:
     )
 
 
-def _should_raise_imgbed_batch_error(response_format: str) -> bool:
-    return response_format == "url" and ImgBedUploadService.is_enabled()
-
-
 class ImageGenerationService:
     """Image generation orchestration service."""
 
@@ -368,7 +364,7 @@ class ImageGenerationService:
             rate_limit_error: Optional[Exception] = None
             for result in results:
                 if isinstance(result, Exception):
-                    if _is_imgbed_error(result) or _should_raise_imgbed_batch_error(response_format):
+                    if _is_imgbed_error(result):
                         raise result
                     logger.warning(f"Concurrent app-chat image call failed: {result}")
                     last_error = result
@@ -456,7 +452,7 @@ class ImageGenerationService:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for batch in results:
             if isinstance(batch, Exception):
-                if _is_imgbed_error(batch) or _should_raise_imgbed_batch_error(response_format):
+                if _is_imgbed_error(batch):
                     raise batch
                 logger.warning(f"WS batch failed: {batch}")
                 continue
@@ -518,7 +514,7 @@ class ImageGenerationService:
                     extra_results = await asyncio.gather(*extra_tasks, return_exceptions=True)
                 for batch in extra_results:
                     if isinstance(batch, Exception):
-                        if _is_imgbed_error(batch) or _should_raise_imgbed_batch_error(response_format):
+                        if _is_imgbed_error(batch):
                             raise batch
                         logger.warning(f"WS recovery batch failed: {batch}")
                         continue
