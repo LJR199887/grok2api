@@ -143,11 +143,11 @@ const LOCALE_MAP = {
 
 
   "imgbed": {
-    "label": "ImgBed Config",
-    "enabled": { title: "Enable ImgBed Mode", desc: "When enabled, final images, videos, and video thumbnails will be uploaded to CloudFlare ImgBed first, then returned as external URLs." },
-    "upload_api_url": { title: "Upload API URL", desc: "Enter the real upload endpoint, for example https://your.domain/upload. Do not enter the documentation page such as .../api/upload.html." },
-    "auth_code": { title: "authCode", desc: "The authCode used by the CloudFlare ImgBed upload API." },
-    "upload_folder": { title: "Upload Folder", desc: "Optional. Maps to ImgBed's uploadFolder parameter. Leave empty to use the default folder." }
+    "label": "鍥惧簥閰嶇疆",
+    "enabled": { title: "鍚敤鍥句紶妯″紡", desc: "寮€鍚悗锛屾渶缁堝浘鐗囥€佽棰戝拰缂╃暐鍥句細鍏堜笂浼犲埌 CloudFlare ImgBed锛屽啀杩斿洖澶栭摼銆?" },
+    "upload_api_url": { title: "涓婁紶 API 鍦板潃", desc: "璇峰～鍐欑湡瀹炰笂浼犵鐐癸紙渚嬪 https://your.domain/upload锛夛紝涓嶆槸鏂囨。椤?.../api/upload.html銆?" },
+    "auth_code": { title: "authCode 瀵嗛挜", desc: "CloudFlare ImgBed 涓婁紶鎺ュ彛浣跨敤鐨?authCode銆?" },
+    "upload_folder": { title: "涓婁紶鐩綍", desc: "鍙€夛紝瀵瑰簲 ImgBed 鐨?uploadFolder 鍙傛暟锛涚暀绌哄垯浣跨敤榛樿鐩綍銆?" }
   },
 
 
