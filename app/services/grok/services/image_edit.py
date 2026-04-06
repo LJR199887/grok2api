@@ -28,6 +28,7 @@ from app.services.grok.utils.process import (
     _collect_images,
     _is_http2_error,
 )
+from app.services.grok.utils.imgbed import ImgBedUploadService
 from app.services.grok.utils.upload import UploadService
 from app.services.grok.utils.retry import pick_token, rate_limited
 from app.services.grok.utils.response import make_response_id, make_chat_chunk, wrap_image_content
@@ -37,6 +38,14 @@ from app.services.token import EffortType
 
 _EDIT_UPSTREAM_MODEL = "imagine-image-edit"
 _EDIT_UPSTREAM_MODE = "MODEL_MODE_AUTO"
+
+
+def _is_imgbed_error(error: Exception) -> bool:
+    return (
+        isinstance(error, UpstreamException)
+        and bool(error.details)
+        and error.details.get("source") == "imgbed"
+    )
 
 
 @dataclass
@@ -230,6 +239,8 @@ class ImageEditService:
             all_images: List[str] = []
             for result in results:
                 if isinstance(result, Exception):
+                    if _is_imgbed_error(result):
+                        raise result
                     logger.error(f"Concurrent call failed: {result}")
                     last_error = result
                     if rate_limited(result):
@@ -532,6 +543,8 @@ class ImageCollectProcessor(BaseProcessor):
                 f"Image collect processing error: {e}",
                 extra={"error_type": type(e).__name__},
             )
+            if self.response_format == "url" and ImgBedUploadService.is_enabled():
+                raise
         finally:
             await self.close()
 

@@ -40,6 +40,14 @@ class ImageGenerationResult:
     usage_override: Optional[dict] = None
 
 
+def _is_imgbed_error(error: Exception) -> bool:
+    return (
+        isinstance(error, UpstreamException)
+        and bool(error.details)
+        and error.details.get("source") == "imgbed"
+    )
+
+
 class ImageGenerationService:
     """Image generation orchestration service."""
 
@@ -356,6 +364,8 @@ class ImageGenerationService:
             rate_limit_error: Optional[Exception] = None
             for result in results:
                 if isinstance(result, Exception):
+                    if _is_imgbed_error(result):
+                        raise result
                     logger.warning(f"Concurrent app-chat image call failed: {result}")
                     last_error = result
                     if rate_limited(result):
@@ -442,6 +452,8 @@ class ImageGenerationService:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for batch in results:
             if isinstance(batch, Exception):
+                if _is_imgbed_error(batch):
+                    raise batch
                 logger.warning(f"WS batch failed: {batch}")
                 continue
             for img in batch:
@@ -502,6 +514,8 @@ class ImageGenerationService:
                     extra_results = await asyncio.gather(*extra_tasks, return_exceptions=True)
                 for batch in extra_results:
                     if isinstance(batch, Exception):
+                        if _is_imgbed_error(batch):
+                            raise batch
                         logger.warning(f"WS recovery batch failed: {batch}")
                         continue
                     for img in batch:
@@ -693,6 +707,9 @@ class ImageWSBaseProcessor(BaseProcessor):
                 )
             return self._strip_base64(item.get("blob", ""))
         except Exception as e:
+            if self.response_format == "url" and ImgBedUploadService.is_enabled():
+                logger.error(f"Image output failed during ImgBed upload: {e}")
+                raise
             logger.warning(f"Image output failed: {e}")
             return ""
 
