@@ -77,27 +77,6 @@ class ImgBedUploadService:
         return mime or fallback
 
     @staticmethod
-    def _response_text_excerpt(response, limit: int = 500) -> str:
-        try:
-            text = getattr(response, "text", "") or ""
-        except Exception:
-            text = ""
-        text = str(text).strip()
-        if len(text) > limit:
-            return f"{text[:limit]}..."
-        return text
-
-    @staticmethod
-    def _build_auth_variants(credential: str) -> list[tuple[str, dict, dict]]:
-        if not credential:
-            return []
-        return [
-            ("authCode", {"authCode": credential}, {}),
-            ("bearer", {}, {"Authorization": f"Bearer {credential}"}),
-            ("authorization", {}, {"Authorization": credential}),
-        ]
-
-    @staticmethod
     def _local_file_from_source(source: str) -> Optional[tuple[Path, str]]:
         parsed = urlparse(source)
         path = parsed.path if (parsed.scheme or parsed.netloc) else source
@@ -215,67 +194,37 @@ class ImgBedUploadService:
         browser = get_config("proxy.browser")
         active_proxy_key = None
 
-        base_params = {"returnFormat": "full"}
+        params = {
+            "authCode": auth_code,
+            "returnFormat": "full",
+        }
         if upload_folder:
-            base_params["uploadFolder"] = upload_folder
+            params["uploadFolder"] = upload_folder
+
+        async def _do_request():
+            nonlocal active_proxy_key
+            active_proxy_key, proxy_url = get_current_proxy_from("proxy.base_proxy_url")
+            proxies = build_http_proxies(proxy_url)
+            response = await session.post(
+                upload_api_url,
+                params=params,
+                files={"file": (filename, content, mime)},
+                proxies=proxies,
+                timeout=timeout,
+                impersonate=browser,
+            )
+            if response.status_code < 200 or response.status_code >= 300:
+                raise UpstreamException(
+                    f"ImgBed upload failed, {response.status_code}",
+                    details={"status": response.status_code, "source": "imgbed"},
+                )
+            return response
 
         async def _on_retry(attempt: int, status_code: int, error: Exception, delay: float):
             if active_proxy_key and should_rotate_proxy(status_code):
                 rotate_proxy(active_proxy_key)
 
-        last_error: Optional[Exception] = None
-        for auth_variant, auth_params, auth_headers in self._build_auth_variants(auth_code):
-            params = dict(base_params)
-            params.update(auth_params)
-
-            async def _do_request():
-                nonlocal active_proxy_key
-                active_proxy_key, proxy_url = get_current_proxy_from("proxy.base_proxy_url")
-                proxies = build_http_proxies(proxy_url)
-                response = await session.post(
-                    upload_api_url,
-                    params=params,
-                    headers=auth_headers,
-                    files={"file": (filename, content, mime)},
-                    proxies=proxies,
-                    timeout=timeout,
-                    impersonate=browser,
-                )
-                if response.status_code < 200 or response.status_code >= 300:
-                    body_excerpt = self._response_text_excerpt(response)
-                    logger.warning(
-                        "ImgBed upload failed via %s, status=%s, body=%s",
-                        auth_variant,
-                        response.status_code,
-                        body_excerpt,
-                    )
-                    raise UpstreamException(
-                        f"ImgBed upload failed, {response.status_code}",
-                        details={
-                            "status": response.status_code,
-                            "source": "imgbed",
-                            "auth_variant": auth_variant,
-                            "body": body_excerpt,
-                        },
-                    )
-                return response
-
-            try:
-                response = await retry_on_status(_do_request, on_retry=_on_retry)
-                break
-            except UpstreamException as exc:
-                last_error = exc
-                status = (exc.details or {}).get("status")
-                if status not in {400, 401, 403}:
-                    raise
-        else:
-            if last_error:
-                raise last_error
-            raise UpstreamException(
-                "ImgBed upload failed: no available auth method",
-                details={"source": "imgbed"},
-            )
-
+        response = await retry_on_status(_do_request, on_retry=_on_retry)
         try:
             payload = response.json()
         except Exception as exc:

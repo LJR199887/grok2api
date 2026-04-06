@@ -146,7 +146,7 @@ const LOCALE_MAP = {
     "label": "\u56fe\u5e8a\u914d\u7f6e",
     "enabled": { title: "\u542f\u7528\u56fe\u4f20\u6a21\u5f0f", desc: "\u5f00\u542f\u540e\uff0c\u6700\u7ec8\u56fe\u7247\u3001\u89c6\u9891\u548c\u89c6\u9891\u7f29\u7565\u56fe\u4f1a\u5148\u4e0a\u4f20\u5230 CloudFlare ImgBed\uff0c\u518d\u8fd4\u56de\u5bf9\u5e94\u7684\u5916\u94fe\u3002" },
     "upload_api_url": { title: "\u4e0a\u4f20 API \u5730\u5740", desc: "\u8bf7\u586b\u5199\u771f\u5b9e\u7684\u4e0a\u4f20\u7aef\u70b9\uff0c\u4f8b\u5982 https://your.domain/upload\uff0c\u800c\u4e0d\u662f\u6587\u6863\u9875 .../api/upload.html\u3002" },
-    "auth_code": { title: "\u4e0a\u4f20\u5bc6\u94a5", desc: "\u53ef\u4ee5\u586b authCode \u6216 API Token\u3002\u7a0b\u5e8f\u4f1a\u81ea\u52a8\u5c1d\u8bd5 query authCode \u4ee5\u53ca Authorization \u5934\u9274\u6743\u3002" },
+    "auth_code": { title: "authCode \u5bc6\u94a5", desc: "CloudFlare ImgBed \u4e0a\u4f20\u63a5\u53e3\u4f7f\u7528\u7684 authCode\u3002" },
     "upload_folder": { title: "\u4e0a\u4f20\u76ee\u5f55", desc: "\u53ef\u9009\u3002\u5bf9\u5e94 ImgBed \u7684 uploadFolder \u53c2\u6570\uff1b\u7559\u7a7a\u65f6\u4f7f\u7528\u9ed8\u8ba4\u76ee\u5f55\u3002" }
   },
 
@@ -637,7 +637,7 @@ async function saveConfig() {
         return;
       }
       if (!authCode) {
-        showToast('ImgBed upload credential is required', 'error');
+        showToast('ImgBed auth_code is required', 'error');
         btn.disabled = false;
         btn.innerText = originalText;
         return;

@@ -49,14 +49,6 @@ def test_imgbed_extract_uploaded_url_normalizes_relative_src():
     assert value == "https://demo.example/file/abc.png"
 
 
-def test_imgbed_build_auth_variants_supports_auth_code_and_api_token():
-    assert ImgBedUploadService._build_auth_variants("secret") == [
-        ("authCode", {"authCode": "secret"}, {}),
-        ("bearer", {}, {"Authorization": "Bearer secret"}),
-        ("authorization", {}, {"Authorization": "secret"}),
-    ]
-
-
 def test_imgbed_does_not_treat_local_v1_files_as_uploaded(monkeypatch):
     monkeypatch.setattr(
         "app.services.grok.utils.imgbed.get_config",
@@ -96,62 +88,6 @@ def test_download_service_resolve_url_uses_imgbed(monkeypatch):
     result = asyncio.run(service.resolve_url("https://assets.grok.com/demo.png", "tok", "image"))
 
     assert result == "https://imgbed.example/image"
-
-
-def test_imgbed_upload_bytes_falls_back_to_authorization_header(monkeypatch):
-    monkeypatch.setattr(
-        "app.services.grok.utils.imgbed.get_config",
-        lambda key, default=None: {
-            "imgbed.enabled": True,
-            "imgbed.upload_api_url": "https://demo.example/upload",
-            "imgbed.auth_code": "secret-token",
-            "imgbed.upload_folder": "",
-            "asset.upload_timeout": 60,
-            "proxy.browser": None,
-            "proxy.base_proxy_url": "",
-        }.get(key, default),
-    )
-    monkeypatch.setattr(
-        "app.services.grok.utils.imgbed.get_current_proxy_from",
-        lambda key: (None, None),
-    )
-    monkeypatch.setattr(
-        "app.services.grok.utils.imgbed.build_http_proxies",
-        lambda proxy_url: None,
-    )
-
-    class FakeResponse:
-        def __init__(self, status_code, payload=None, text=""):
-            self.status_code = status_code
-            self._payload = payload or {}
-            self.text = text
-
-        def json(self):
-            return self._payload
-
-    class FakeSession:
-        def __init__(self):
-            self.calls = []
-
-        async def post(self, url, params=None, headers=None, files=None, proxies=None, timeout=None, impersonate=None):
-            self.calls.append({"url": url, "params": params, "headers": headers, "files": files})
-            if len(self.calls) == 1:
-                return FakeResponse(403, text="forbidden")
-            return FakeResponse(200, payload=[{"src": "/file/uploaded.png"}])
-
-    service = ImgBedUploadService()
-    fake_session = FakeSession()
-
-    async def fake_create():
-        return fake_session
-
-    monkeypatch.setattr(service, "create", fake_create)
-
-    result = asyncio.run(service.upload_bytes("demo.png", b"png-bytes", "image/png"))
-
-    assert result == "https://demo.example/file/uploaded.png"
-    assert fake_session.calls[0]["params"]["authCode"] == "secret-token"
-    assert fake_session.calls[1]["headers"]["Authorization"] == "Bearer secret-token"
 
 
 def test_image_collect_processor_uploads_only_final_images(monkeypatch):
