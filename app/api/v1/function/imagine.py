@@ -18,7 +18,8 @@ from app.core.logger import logger
 from app.api.v1.image import resolve_aspect_ratio
 from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.model import ModelService
-from app.services.tasks import get_media_task_service
+from app.services.grok.utils.imgbed import ImgBedUploadService
+from app.services.tasks import extract_media_result_url, get_media_task_service
 from app.services.token.manager import get_token_manager
 
 router = APIRouter()
@@ -161,6 +162,7 @@ async def function_imagine_ws(websocket: WebSocket):
 
         sequence = 0
         task_service = get_media_task_service()
+        response_format = "url" if ImgBedUploadService.is_enabled() else "b64_json"
         while not stop_event.is_set():
             task = await task_service.create_task(
                 task_type="image",
@@ -199,29 +201,38 @@ async def function_imagine_ws(websocket: WebSocket):
                     model_info=model_info,
                     prompt=prompt,
                     n=1,
-                    response_format="b64_json",
+                    response_format=response_format,
                     size="1024x1024",
                     aspect_ratio=aspect_ratio,
                     stream=False,
                     enable_nsfw=nsfw,
                 )
-                images = [img for img in result.data if img and img != "error"]
+                images = []
+                for item in result.data:
+                    if not item or item == "error":
+                        continue
+                    if response_format == "url":
+                        value = extract_media_result_url(item)
+                    else:
+                        value = str(item).strip()
+                    if value and value != "error":
+                        images.append(value)
                 if images:
-                    await task_service.mark_success(task)
+                    result_url = images[0] if response_format == "url" else None
+                    await task_service.mark_success(task, result_url=result_url)
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                    for img_b64 in images:
+                    for image_payload in images:
                         sequence += 1
-                        await _send(
-                            {
-                                "type": "image",
-                                "b64_json": img_b64,
-                                "sequence": sequence,
-                                "created_at": int(time.time() * 1000),
-                                "elapsed_ms": elapsed_ms,
-                                "aspect_ratio": aspect_ratio,
-                                "run_id": run_id,
-                            }
-                        )
+                        payload = {
+                            "type": "image",
+                            "sequence": sequence,
+                            "created_at": int(time.time() * 1000),
+                            "elapsed_ms": elapsed_ms,
+                            "aspect_ratio": aspect_ratio,
+                            "run_id": run_id,
+                        }
+                        payload["url" if response_format == "url" else "b64_json"] = image_payload
+                        await _send(payload)
                 else:
                     await task_service.mark_failure(
                         task, "Image generation returned empty data."
@@ -370,6 +381,7 @@ async def function_imagine_sse(
             sequence = 0
             run_id = uuid.uuid4().hex
             task_service = get_media_task_service()
+            response_format = "url" if ImgBedUploadService.is_enabled() else "b64_json"
 
             yield (
                 f"data: {orjson.dumps({'type': 'status', 'status': 'running', 'prompt': prompt, 'aspect_ratio': ratio, 'run_id': run_id}).decode()}\n\n"
@@ -417,27 +429,37 @@ async def function_imagine_sse(
                         model_info=model_info,
                         prompt=prompt,
                         n=1,
-                        response_format="b64_json",
+                        response_format=response_format,
                         size="1024x1024",
                         aspect_ratio=ratio,
                         stream=False,
                         enable_nsfw=nsfw,
                     )
-                    images = [img for img in result.data if img and img != "error"]
+                    images = []
+                    for item in result.data:
+                        if not item or item == "error":
+                            continue
+                        if response_format == "url":
+                            value = extract_media_result_url(item)
+                        else:
+                            value = str(item).strip()
+                        if value and value != "error":
+                            images.append(value)
                     if images:
-                        await task_service.mark_success(task)
+                        result_url = images[0] if response_format == "url" else None
+                        await task_service.mark_success(task, result_url=result_url)
                         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                        for img_b64 in images:
+                        for image_payload in images:
                             sequence += 1
                             payload = {
                                 "type": "image",
-                                "b64_json": img_b64,
                                 "sequence": sequence,
                                 "created_at": int(time.time() * 1000),
                                 "elapsed_ms": elapsed_ms,
                                 "aspect_ratio": ratio,
                                 "run_id": run_id,
                             }
+                            payload["url" if response_format == "url" else "b64_json"] = image_payload
                             yield f"data: {orjson.dumps(payload).decode()}\n\n"
                     else:
                         await task_service.mark_failure(

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.image_edit import ImageEditService
 from app.services.grok.services.model import ModelService
-from app.services.tasks import get_media_task_service
+from app.services.tasks import extract_media_result_url, get_media_task_service
 from app.services.token import get_token_manager
 from app.core.exceptions import ValidationException, AppException, ErrorType
 from app.core.config import get_config
@@ -305,7 +305,11 @@ async def create_image(request: ImageGenerationRequest):
 
     if result.stream:
         return StreamingResponse(
-            task_service.wrap_stream(task, result.data),
+            task_service.wrap_stream(
+                task,
+                result.data,
+                capture_result_url=(response_format == "url"),
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
@@ -318,7 +322,10 @@ async def create_image(request: ImageGenerationRequest):
         "input_tokens_details": {"text_tokens": 0, "image_tokens": 0},
     }
 
-    await task_service.mark_success(task)
+    await task_service.mark_success(
+        task,
+        result_url=extract_media_result_url(data) if response_format == "url" else None,
+    )
 
     return JSONResponse(
         content={
@@ -453,13 +460,20 @@ async def edit_image(
 
     if result.stream:
         return StreamingResponse(
-            task_service.wrap_stream(task, result.data),
+            task_service.wrap_stream(
+                task,
+                result.data,
+                capture_result_url=(response_format == "url"),
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
     data = [{response_field: img} for img in result.data]
-    await task_service.mark_success(task)
+    await task_service.mark_success(
+        task,
+        result_url=extract_media_result_url(data) if response_format == "url" else None,
+    )
 
     return JSONResponse(
         content={

@@ -49,6 +49,7 @@ async def get_tokens():
     # 获取消耗模式配置
     from app.core.config import get_config
     mgr = await get_token_manager()
+    await mgr.reload()
     results = {}
     for pool_name, pool in mgr.pools.items():
         results[pool_name] = [t.model_dump() for t in pool.list()]
@@ -138,6 +139,7 @@ async def refresh_tokens(data: dict):
     """刷新 Token 状态"""
     try:
         mgr = await get_token_manager()
+        await mgr.reload()
         tokens = []
         if isinstance(data.get("token"), str) and data["token"].strip():
             tokens.append(data["token"].strip())
@@ -156,6 +158,7 @@ async def refresh_tokens(data: dict):
 
         # 强制保存变更到存储
         await mgr._save(force=True)
+        await mgr.reload()
 
         results = {}
         for token, res in raw_results.items():
@@ -171,6 +174,7 @@ async def refresh_tokens(data: dict):
 async def refresh_tokens_async(data: dict):
     """刷新 Token 状态（异步批量 + SSE 进度）"""
     mgr = await get_token_manager()
+    await mgr.reload()
     tokens = []
     if isinstance(data.get("token"), str) and data["token"].strip():
         tokens.append(data["token"].strip())
@@ -213,6 +217,7 @@ async def refresh_tokens_async(data: dict):
                     results[token] = False
 
             await mgr._save(force=True)
+            await mgr.reload()
 
             result = {
                 "status": "success",

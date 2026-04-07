@@ -49,6 +49,7 @@ class TokenRefreshScheduler:
                 try:
                     logger.info("Scheduler: starting token refresh...")
                     manager = await get_token_manager()
+                    await manager.reload()
                     result = await manager.refresh_cooling_tokens()
 
                     logger.info(

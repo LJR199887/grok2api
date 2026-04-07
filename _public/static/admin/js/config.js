@@ -142,6 +142,15 @@ const LOCALE_MAP = {
   },
 
 
+  "imgbed": {
+    "label": "\u56fe\u5e8a\u914d\u7f6e",
+    "enabled": { title: "\u542f\u7528\u56fe\u4f20\u6a21\u5f0f", desc: "\u5f00\u542f\u540e\uff0c\u6700\u7ec8\u56fe\u7247\u3001\u89c6\u9891\u548c\u89c6\u9891\u7f29\u7565\u56fe\u4f1a\u5148\u4e0a\u4f20\u5230 CloudFlare ImgBed\uff0c\u518d\u8fd4\u56de\u5bf9\u5e94\u7684\u5916\u94fe\u3002" },
+    "upload_api_url": { title: "\u4e0a\u4f20 API \u5730\u5740", desc: "\u8bf7\u586b\u5199\u771f\u5b9e\u7684\u4e0a\u4f20\u7aef\u70b9\uff0c\u4f8b\u5982 https://your.domain/upload\uff0c\u800c\u4e0d\u662f\u6587\u6863\u9875 .../api/upload.html\u3002" },
+    "auth_code": { title: "authCode \u5bc6\u94a5", desc: "CloudFlare ImgBed \u4e0a\u4f20\u63a5\u53e3\u4f7f\u7528\u7684 authCode\u3002" },
+    "upload_folder": { title: "\u4e0a\u4f20\u76ee\u5f55", desc: "\u53ef\u9009\u3002\u5bf9\u5e94 ImgBed \u7684 uploadFolder \u53c2\u6570\uff1b\u7559\u7a7a\u65f6\u4f7f\u7528\u9ed8\u8ba4\u76ee\u5f55\u3002" }
+  },
+
+
   "voice": {
     "label": "语音配置",
     "timeout": { title: "请求超时", desc: "Voice 请求超时时间（秒）。" }
@@ -199,7 +208,8 @@ const LOCALE_MAP = {
 
 // 配置部分说明（可选）
 const SECTION_DESCRIPTIONS = {
-  "proxy": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。"
+  "proxy": "\u914d\u7f6e\u4e0d\u6b63\u786e\u5c06\u5bfc\u81f4 403 \u9519\u8bef\u3002\u670d\u52a1\u9996\u6b21\u8bf7\u6c42 Grok \u65f6\u7684 IP \u5fc5\u987b\u4e0e\u83b7\u53d6 CF Clearance \u65f6\u7684 IP \u4e00\u81f4\uff0c\u540e\u7eed\u670d\u52a1\u5668\u8bf7\u6c42 IP \u53d8\u5316\u4e0d\u4f1a\u5bfc\u81f4 403\u3002",
+  "imgbed": "\u652f\u6301 CloudFlare ImgBed \u7684 cfbed/upload API \u6a21\u5f0f\u3002\u5f00\u542f\u540e\uff0c\u6700\u7ec8\u56fe\u7247\u3001\u89c6\u9891\u548c\u89c6\u9891\u7f29\u7565\u56fe\u4f1a\u5148\u4e0a\u4f20\u5230\u56fe\u5e8a\uff0c\u518d\u8fd4\u56de\u5bf9\u5e94\u7684\u5916\u94fe\u3002\u4e0a\u4f20\u5931\u8d25\u65f6\u4f1a\u76f4\u63a5\u8fd4\u56de\u9519\u8bef\uff0c\u4e0d\u4f1a\u56de\u9000\u5230\u65e7\u94fe\u63a5\u3002"
 };
 
 // CF 自动刷新联动禁用字段（全部在 proxy section 内）
@@ -611,6 +621,23 @@ async function saveConfig() {
       const url = String(newConfig.proxy.flaresolverr_url || '').trim();
       if (!url) {
         showToast(t('config.flaresolverrRequired'), 'error');
+        btn.disabled = false;
+        btn.innerText = originalText;
+        return;
+      }
+    }
+
+    if (newConfig.imgbed && newConfig.imgbed.enabled) {
+      const uploadApiUrl = String(newConfig.imgbed.upload_api_url || '').trim();
+      const authCode = String(newConfig.imgbed.auth_code || '').trim();
+      if (!uploadApiUrl) {
+        showToast('ImgBed upload_api_url is required', 'error');
+        btn.disabled = false;
+        btn.innerText = originalText;
+        return;
+      }
+      if (!authCode) {
+        showToast('ImgBed auth_code is required', 'error');
         btn.disabled = false;
         btn.innerText = originalText;
         return;

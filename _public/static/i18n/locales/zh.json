@@ -111,6 +111,7 @@
     "tableStatus": "状态",
     "tableStartedAt": "开始时间",
     "tableDuration": "耗时/秒",
+    "tableAssetLink": "公开链接",
     "tableEndpoint": "接口入口",
     "statsDate": "日期",
     "statsTotal": "总任务数",
@@ -124,6 +125,8 @@
     "sourceChat": "聊天接口",
     "sourceFunctionImagine": "Imagine 功能页",
     "sourceFunctionVideo": "Video 功能页",
+    "openAssetLink": "打开",
+    "failureLogEmpty": "暂无失败日志。",
     "noTasks": "当前没有匹配的任务。"
   },
   "login": {
@@ -162,6 +165,7 @@
       "image": "图像配置",
       "imagine_fast": "Imagine Fast 配置",
       "asset": "资产配置",
+      "imgbed": "\u56fe\u5e8a\u914d\u7f6e",
       "voice": "语音配置",
       "token": "Token 池管理",
       "cache": "缓存管理",
@@ -169,7 +173,8 @@
       "usage": "Usage 配置"
     },
     "sectionDescs": {
-      "proxy": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。"
+      "proxy": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。",
+      "imgbed": "\u652f\u6301 CloudFlare ImgBed \u7684 cfbed/upload API \u6a21\u5f0f\u3002\u5f00\u542f\u540e\uff0c\u6700\u7ec8\u56fe\u7247\u3001\u89c6\u9891\u548c\u89c6\u9891\u7f29\u7565\u56fe\u4f1a\u5148\u4e0a\u4f20\u5230\u56fe\u5e8a\uff0c\u518d\u8fd4\u56de\u5bf9\u5e94\u7684\u5916\u94fe\u3002\u4e0a\u4f20\u5931\u8d25\u65f6\u4f1a\u76f4\u63a5\u8fd4\u56de\u9519\u8bef\uff0c\u4e0d\u4f1a\u56de\u9000\u5230\u65e7\u94fe\u63a5\u3002"
     },
     "fields": {
       "app": {
@@ -248,6 +253,12 @@
         "delete_concurrent": {"title": "删除并发", "desc": "资产删除接口的最大并发数。推荐 10。"},
         "delete_timeout": {"title": "删除超时", "desc": "资产删除接口超时时间（秒）。推荐 60。"},
         "delete_batch_size": {"title": "删除批次大小", "desc": "单次删除可处理的 Token 数量。推荐 10。"}
+      },
+      "imgbed": {
+        "enabled": {"title": "\u542f\u7528\u56fe\u4f20\u6a21\u5f0f", "desc": "\u5f00\u542f\u540e\uff0c\u6700\u7ec8\u56fe\u7247\u3001\u89c6\u9891\u548c\u89c6\u9891\u7f29\u7565\u56fe\u4f1a\u5148\u4e0a\u4f20\u5230 CloudFlare ImgBed\uff0c\u518d\u8fd4\u56de\u5bf9\u5e94\u7684\u5916\u94fe\u3002"},
+        "upload_api_url": {"title": "\u4e0a\u4f20 API \u5730\u5740", "desc": "\u8bf7\u586b\u5199\u771f\u5b9e\u7684\u4e0a\u4f20\u7aef\u70b9\uff0c\u4f8b\u5982 https://your.domain/upload\uff0c\u800c\u4e0d\u662f\u6587\u6863\u9875 .../api/upload.html\u3002"},
+        "auth_code": {"title": "authCode \u5bc6\u94a5", "desc": "CloudFlare ImgBed \u4e0a\u4f20\u63a5\u53e3\u4f7f\u7528\u7684 authCode\u3002"},
+        "upload_folder": {"title": "\u4e0a\u4f20\u76ee\u5f55", "desc": "\u53ef\u9009\u3002\u5bf9\u5e94 ImgBed \u7684 uploadFolder \u53c2\u6570\uff1b\u7559\u7a7a\u65f6\u4f7f\u7528\u9ed8\u8ba4\u76ee\u5f55\u3002"}
       },
       "voice": {
         "timeout": {"title": "请求超时", "desc": "Voice 请求超时时间（秒）。"}

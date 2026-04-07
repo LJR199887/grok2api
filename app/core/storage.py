@@ -164,6 +164,39 @@ class BaseStorage(abc.ABC):
         """增量保存 Token（默认回退到全量保存）"""
         existing = await self.load_tokens() or {}
 
+        def _find_existing_token(token_str: str):
+            for current_pool_name, tokens in existing.items():
+                if not isinstance(tokens, list):
+                    continue
+                for current in tokens:
+                    if isinstance(current, str):
+                        current_token = current
+                        current_payload = {"token": current}
+                    elif isinstance(current, dict):
+                        current_token = current.get("token")
+                        current_payload = dict(current)
+                    else:
+                        continue
+                    if current_token == token_str:
+                        return current_pool_name, current_payload
+            return None, None
+
+        def _remove_existing_token(token_str: str):
+            for current_pool_name, tokens in list(existing.items()):
+                if not isinstance(tokens, list):
+                    continue
+                existing[current_pool_name] = [
+                    current
+                    for current in tokens
+                    if not (
+                        (isinstance(current, str) and current == token_str)
+                        or (
+                            isinstance(current, dict)
+                            and current.get("token") == token_str
+                        )
+                    )
+                ]
+
         deleted_set = set(deleted or [])
         if deleted_set:
             for pool_name, tokens in list(existing.items()):
@@ -185,29 +218,35 @@ class BaseStorage(abc.ABC):
         for item in updated or []:
             if not isinstance(item, dict):
                 continue
-            pool_name = item.get("pool_name")
             token_str = item.get("token")
-            if not pool_name or not token_str:
+            requested_pool_name = item.get("pool_name")
+            if not requested_pool_name or not token_str:
                 continue
-            pool_list = existing.setdefault(pool_name, [])
+            allow_reactivate = bool(item.get("_allow_reactivate"))
             normalized = {
                 k: v
                 for k, v in item.items()
-                if k not in ("pool_name", "_update_kind")
+                if k not in ("pool_name", "_update_kind", "_allow_reactivate")
             }
-            replaced = False
-            for idx, current in enumerate(pool_list):
-                if isinstance(current, str):
-                    if current == token_str:
-                        pool_list[idx] = normalized
-                        replaced = True
-                        break
-                elif isinstance(current, dict) and current.get("token") == token_str:
-                    pool_list[idx] = normalized
-                    replaced = True
-                    break
-            if not replaced:
-                pool_list.append(normalized)
+            existing_pool_name, existing_payload = _find_existing_token(token_str)
+            pool_name = requested_pool_name
+            if (
+                existing_payload
+                and existing_payload.get("status") == "disabled"
+                and normalized.get("status") != "disabled"
+                and not allow_reactivate
+            ):
+                normalized = {
+                    **existing_payload,
+                    **normalized,
+                    "token": token_str,
+                    "status": "disabled",
+                }
+                pool_name = existing_pool_name or requested_pool_name
+
+            _remove_existing_token(token_str)
+            pool_list = existing.setdefault(pool_name, [])
+            pool_list.append(normalized)
 
         await self.save_tokens(existing)
 
@@ -858,7 +897,8 @@ class SQLStorage(BaseStorage):
                         created_at BIGINT NOT NULL,
                         updated_at BIGINT NOT NULL,
                         completed_at BIGINT,
-                        error_message TEXT
+                        error_message TEXT,
+                        result_url TEXT
                     )
                 """)
                 )
@@ -934,6 +974,25 @@ class SQLStorage(BaseStorage):
                             await conn.execute(
                                 text(
                                     f"ALTER TABLE tokens ADD COLUMN {col_name} {col_type}"
+                                )
+                            )
+                        except Exception:
+                            pass
+
+                media_task_columns = [("result_url", "TEXT")]
+                if self.dialect in ("postgres", "postgresql", "pgsql"):
+                    for col_name, col_type in media_task_columns:
+                        await conn.execute(
+                            text(
+                                f"ALTER TABLE media_tasks ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                            )
+                        )
+                else:
+                    for col_name, col_type in media_task_columns:
+                        try:
+                            await conn.execute(
+                                text(
+                                    f"ALTER TABLE media_tasks ADD COLUMN {col_name} {col_type}"
                                 )
                             )
                         except Exception:
@@ -1341,6 +1400,7 @@ class SQLStorage(BaseStorage):
                 token_data["token"] = token_str
                 token_data["pool_name"] = pool_name
                 token_data["_update_kind"] = "state"
+                token_data["_allow_reactivate"] = True
                 updates.append(token_data)
                 new_tokens.add(token_str)
 
@@ -1383,6 +1443,29 @@ class SQLStorage(BaseStorage):
 
                 updates = []
                 usage_updates = []
+                existing_rows_by_token: Dict[str, Dict[str, Any]] = {}
+
+                updated_token_ids = list(
+                    {
+                        str(item.get("token"))
+                        for item in (updated or [])
+                        if isinstance(item, dict)
+                        and item.get("token")
+                        and item.get("token") not in deleted_set
+                    }
+                )
+                if updated_token_ids:
+                    existing_stmt = text(
+                        "SELECT token, status, pool_name FROM tokens WHERE token IN :tokens"
+                    ).bindparams(bindparam("tokens", expanding=True))
+                    existing_res = await session.execute(
+                        existing_stmt, {"tokens": updated_token_ids}
+                    )
+                    for row in existing_res.fetchall():
+                        existing_rows_by_token[row[0]] = {
+                            "status": row[1],
+                            "pool_name": row[2],
+                        }
 
                 for item in updated or []:
                     if not isinstance(item, dict):
@@ -1394,11 +1477,21 @@ class SQLStorage(BaseStorage):
                     if token_str in deleted_set:
                         continue
                     update_kind = item.get("_update_kind", "state")
+                    allow_reactivate = bool(item.get("_allow_reactivate"))
                     token_data = {
                         k: v
                         for k, v in item.items()
-                        if k not in ("pool_name", "_update_kind")
+                        if k not in ("pool_name", "_update_kind", "_allow_reactivate")
                     }
+                    existing_row = existing_rows_by_token.get(token_str)
+                    if (
+                        existing_row
+                        and existing_row.get("status") == "disabled"
+                        and token_data.get("status") != "disabled"
+                        and not allow_reactivate
+                    ):
+                        token_data["status"] = "disabled"
+                        pool_name = existing_row.get("pool_name") or pool_name
                     row = self._token_to_row(token_data, pool_name)
                     if update_kind == "usage":
                         usage_updates.append(row)
@@ -1550,8 +1643,8 @@ class SQLStorage(BaseStorage):
             async with self.async_session() as session:
                 if self.dialect in ("mysql", "mariadb"):
                     stmt = text(
-                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
-                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message) "
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message, :result_url) "
                         "ON DUPLICATE KEY UPDATE "
                         "task_type=VALUES(task_type), "
                         "source=VALUES(source), "
@@ -1561,12 +1654,13 @@ class SQLStorage(BaseStorage):
                         "created_at=VALUES(created_at), "
                         "updated_at=VALUES(updated_at), "
                         "completed_at=VALUES(completed_at), "
-                        "error_message=VALUES(error_message)"
+                        "error_message=VALUES(error_message), "
+                        "result_url=VALUES(result_url)"
                     )
                 elif self.dialect in ("postgres", "postgresql", "pgsql"):
                     stmt = text(
-                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
-                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message) "
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message, :result_url) "
                         "ON CONFLICT (task_id) DO UPDATE SET "
                         "task_type=EXCLUDED.task_type, "
                         "source=EXCLUDED.source, "
@@ -1576,12 +1670,13 @@ class SQLStorage(BaseStorage):
                         "created_at=EXCLUDED.created_at, "
                         "updated_at=EXCLUDED.updated_at, "
                         "completed_at=EXCLUDED.completed_at, "
-                        "error_message=EXCLUDED.error_message"
+                        "error_message=EXCLUDED.error_message, "
+                        "result_url=EXCLUDED.result_url"
                     )
                 else:
                     stmt = text(
-                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message) "
-                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message)"
+                        "INSERT INTO media_tasks (task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url) "
+                        "VALUES (:task_id, :task_type, :source, :status, :model, :endpoint, :created_at, :updated_at, :completed_at, :error_message, :result_url)"
                     )
                 await session.execute(stmt, record)
                 await session.commit()
@@ -1601,7 +1696,7 @@ class SQLStorage(BaseStorage):
 
         try:
             query = (
-                "SELECT task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message "
+                "SELECT task_id, task_type, source, status, model, endpoint, created_at, updated_at, completed_at, error_message, result_url "
                 "FROM media_tasks WHERE 1=1"
             )
             params: Dict[str, Any] = {}
@@ -1640,6 +1735,7 @@ class SQLStorage(BaseStorage):
                         "updated_at": row[7],
                         "completed_at": row[8],
                         "error_message": row[9],
+                        "result_url": row[10],
                     }
                 )
             return _filter_media_tasks(
