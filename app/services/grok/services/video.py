@@ -43,6 +43,7 @@ _VIDEO_SEMAPHORE = None
 _VIDEO_SEM_VALUE = 0
 _APP_CHAT_MODEL = "grok-3"
 _POST_ID_URL_PATTERN = r"/generated/([0-9a-fA-F-]{32,36})/"
+_VIDEO_URL_RE = re.compile(r"""https?://[^\s"'<>]+""")
 _REFERENCE_PLACEHOLDER_RE = re.compile(r"@(?:(?:图|image|img)\s*(\d+))", re.IGNORECASE)
 
 
@@ -65,12 +66,98 @@ class VideoRoundResult:
     last_progress: Any = None
     saw_video_event: bool = False
     stream_errors: List[Any] = field(default_factory=list)
+    fallback_video_candidates: List[str] = field(default_factory=list)
+    video_debug: Dict[str, Any] = field(default_factory=dict)
 
 
 def _pick_str(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
+
+
+def _normalize_video_url(value: Any) -> str:
+    url = _pick_str(value).strip("\"'")
+    if not url:
+        return ""
+    url = url.replace("\\/", "/")
+    url = re.sub(r"(?:\\[nrt]|/[nrt])+$", "", url).rstrip("\\")
+    return url.rstrip(".,)").strip().strip("\"'")
+
+
+def _looks_like_video_url(value: str) -> bool:
+    if not value:
+        return False
+    lower = value.lower()
+    return lower.startswith("http") and (
+        ".mp4" in lower
+        or "generated_video" in lower
+        or "/generated/" in lower
+        or "/share-videos/" in lower
+    )
+
+
+def _collect_video_debug(resp: Dict[str, Any], video_resp: Any) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {"response_keys": sorted(list(resp.keys()))[:20]}
+    if isinstance(video_resp, dict):
+        summary["video_response_keys"] = sorted(list(video_resp.keys()))[:20]
+        for key in (
+            "videoUrl",
+            "video_url",
+            "generatedVideoUrl",
+            "downloadUrl",
+            "mediaUrl",
+            "fileUrl",
+            "thumbnailImageUrl",
+            "videoPostId",
+            "postId",
+        ):
+            value = _pick_str(video_resp.get(key))
+            if value:
+                summary[key] = value[:300]
+    model_resp = resp.get("modelResponse")
+    if isinstance(model_resp, dict):
+        summary["model_response_keys"] = sorted(list(model_resp.keys()))[:20]
+    return summary
+
+
+def _extract_video_url_candidates(value: Any) -> List[str]:
+    candidates: List[str] = []
+
+    def add(raw: Any) -> None:
+        url = _normalize_video_url(raw)
+        if _looks_like_video_url(url) and url not in candidates:
+            candidates.append(url)
+
+    def walk(item: Any) -> None:
+        if isinstance(item, dict):
+            for key in (
+                "videoUrl",
+                "video_url",
+                "generatedVideoUrl",
+                "downloadUrl",
+                "mediaUrl",
+                "fileUrl",
+                "url",
+                "src",
+            ):
+                if key in item:
+                    add(item.get(key))
+            for child in item.values():
+                walk(child)
+            return
+
+        if isinstance(item, list):
+            for child in item:
+                walk(child)
+            return
+
+        if isinstance(item, str):
+            for match in _VIDEO_URL_RE.finditer(item):
+                add(match.group(0))
+
+    walk(value)
+    return candidates
 
 
 def _extract_last_user_prompt_and_images(
@@ -439,19 +526,29 @@ async def _iter_round_events(
             _apply_post_id_candidates(result, _extract_post_id_candidates(resp))
 
             video_resp = resp.get("streamingVideoGenerationResponse")
+            result.video_debug = _collect_video_debug(resp, video_resp)
             progress = None
             if isinstance(video_resp, dict):
                 result.saw_video_event = True
                 progress = video_resp.get("progress")
                 result.last_progress = progress
 
-                url = _pick_str(video_resp.get("videoUrl"))
+                url = _normalize_video_url(video_resp.get("videoUrl"))
                 if url:
                     result.video_url = url
 
                 thumbnail = _pick_str(video_resp.get("thumbnailImageUrl"))
                 if thumbnail:
                     result.thumbnail_url = thumbnail
+
+            if not result.video_url:
+                result.fallback_video_candidates = _extract_video_url_candidates(resp)
+                if result.fallback_video_candidates:
+                    result.video_url = result.fallback_video_candidates[0]
+                    logger.info(
+                        "Video URL recovered from fallback parser: "
+                        f"{result.video_url}"
+                    )
 
             if not result.post_id and result.video_url:
                 result.post_id = _extract_post_id_from_video_url(result.video_url)
@@ -532,6 +629,8 @@ def _round_error_details(
         "response_id": result.response_id,
         "last_progress": result.last_progress,
         "stream_errors": result.stream_errors,
+        "fallback_video_candidates": result.fallback_video_candidates[:5],
+        "video_debug": result.video_debug,
     }
 
 
@@ -569,6 +668,16 @@ def _ensure_round_result(
         err_type = "missing_video_url"
     else:
         err_type = "empty_video_stream"
+
+    logger.warning(
+        "Video final URL missing: "
+        f"type={err_type}, round={round_index}/{total_rounds}, "
+        f"response_id={result.response_id}, "
+        f"last_progress={result.last_progress}, "
+        f"stream_errors={result.stream_errors}, "
+        f"fallback_video_candidates={result.fallback_video_candidates[:5]}, "
+        f"video_debug={result.video_debug}"
+    )
 
     raise UpstreamException(
         message=f"Video round {round_index}/{total_rounds} missing final video_url",
