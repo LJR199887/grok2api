@@ -19,6 +19,7 @@
   "header": {
     "account": "Account Management",
     "config": "Configuration Management",
+    "tasks": "Task List",
     "cache": "Cache Management",
     "languageLabel": "Language",
     "logout": "Sign Out",
@@ -34,6 +35,44 @@
     "versionNotesEmpty": "No release notes available.",
     "versionOpenRelease": "Open Release",
     "versionClose": "Close"
+  },
+  "tasks": {
+    "pageTitle": "Grok2API - Task List",
+    "title": "Task List",
+    "subtitle": "Monitor image and video generation tasks, duration, failure logs, and public links.",
+    "manualRefresh": "Refresh",
+    "totalTasks": "Total Tasks",
+    "imageRunning": "Image Running",
+    "imageSuccess": "Image Success",
+    "imageFailure": "Image Failure",
+    "videoRunning": "Video Running",
+    "videoSuccess": "Video Success",
+    "videoFailure": "Video Failure",
+    "filterType": "Type",
+    "filterStatus": "Status",
+    "typeImage": "Image",
+    "typeVideo": "Video",
+    "statusRunning": "Running",
+    "statusSuccess": "Success",
+    "statusFailure": "Failure",
+    "tableType": "Type",
+    "tableSource": "Source",
+    "tableModel": "Model",
+    "tableStatus": "Status",
+    "tableStartedAt": "Started At",
+    "tableDuration": "Elapsed / Sec",
+    "tableAssetLink": "Public Link",
+    "tableEndpoint": "Endpoint",
+    "openAssetLink": "Open",
+    "noTasks": "No matching tasks right now.",
+    "failureTitle": "Failure Details",
+    "failureLogEmpty": "No failure log available.",
+    "close": "Close",
+    "loadSuccess": "Refreshed",
+    "loadFailed": "Failed to load tasks: {message}",
+    "sourceImagesApi": "Images API",
+    "sourceVideosApi": "Videos API",
+    "sourceChat": "Chat Completions"
   },
   "webui": {
     "header": {
@@ -478,6 +517,10 @@
         "usageConcurrency": {
           "label": "Refresh Concurrency",
           "desc": "Maximum number of parallel usage calls allowed during quota refresh."
+        },
+        "autoDisableBasicTokens": {
+          "label": "Auto-disable Basic Accounts",
+          "desc": "When enabled, accounts detected as Basic during quota refresh are disabled automatically so they no longer participate in allocation."
         },
         "onDemandMinInterval": {
           "label": "On-Demand Refresh Interval (s)",

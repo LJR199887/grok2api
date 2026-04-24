@@ -8,6 +8,7 @@ Supports:
 import asyncio
 import hashlib
 import html
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -80,6 +81,7 @@ _PRESET_FLAGS = {
     "spicy": "--mode=extremely-spicy-or-crazy",
     "custom": "--mode=custom",
 }
+_VIDEO_URL_RE = re.compile(r"""https?://[^\s"'<>]+""")
 
 
 @dataclass(slots=True)
@@ -323,6 +325,85 @@ def _extract_model_response_file_attachments(data: dict[str, Any]) -> list[str]:
     return [item for item in attachments if isinstance(item, str) and item]
 
 
+def _normalize_video_url_candidate(value: Any) -> str:
+    text = str(value or "").strip().strip("\"'")
+    if not text:
+        return ""
+    text = text.replace("\\/", "/")
+    text = re.sub(r"(?:\\[nrt]|/[nrt])+$", "", text).rstrip("\\")
+    return text.rstrip(".,)").strip().strip("\"'")
+
+
+def _looks_like_video_url(value: str) -> bool:
+    lower = value.lower()
+    return lower.startswith("http") and (
+        ".mp4" in lower
+        or "generated_video" in lower
+        or "/generated/" in lower
+        or "/share-videos/" in lower
+    )
+
+
+def _extract_video_url_candidates(value: Any) -> list[str]:
+    candidates: list[str] = []
+
+    def add(raw: Any) -> None:
+        url = _normalize_video_url_candidate(raw)
+        if _looks_like_video_url(url) and url not in candidates:
+            candidates.append(url)
+
+    def walk(item: Any) -> None:
+        if isinstance(item, dict):
+            for key in (
+                "videoUrl",
+                "video_url",
+                "generatedVideoUrl",
+                "downloadUrl",
+                "mediaUrl",
+                "fileUrl",
+                "url",
+                "src",
+            ):
+                if key in item:
+                    add(item.get(key))
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+        elif isinstance(item, str):
+            for match in _VIDEO_URL_RE.finditer(item):
+                add(match.group(0))
+
+    walk(value)
+    return candidates
+
+
+def _video_debug_summary(obj: dict[str, Any], stream: dict[str, Any] | None) -> dict[str, Any]:
+    result = obj.get("result")
+    response = result.get("response") if isinstance(result, dict) else None
+    summary: dict[str, Any] = {
+        "top_keys": sorted(obj.keys())[:20],
+    }
+    if isinstance(response, dict):
+        summary["response_keys"] = sorted(response.keys())[:20]
+    if isinstance(stream, dict):
+        summary["stream_keys"] = sorted(stream.keys())[:20]
+        for key in (
+            "videoUrl",
+            "assetId",
+            "thumbnailImageUrl",
+            "videoPostId",
+            "videoId",
+            "progress",
+            "moderated",
+        ):
+            value = stream.get(key)
+            if value is not None:
+                summary[key] = str(value)[:300]
+    return summary
+
+
 async def _stream_video_request(
     token: str,
     payload: dict[str, Any],
@@ -465,6 +546,9 @@ async def _collect_video_segment(
     final_asset_id = ""
     final_thumbnail = ""
     video_post_id = ""
+    fallback_candidates: list[str] = []
+    last_progress: int | None = None
+    last_debug: dict[str, Any] = {}
 
     async for line in _stream_video_request(
         token,
@@ -483,11 +567,16 @@ async def _collect_video_segment(
             continue
 
         stream = _extract_streaming_video_response(obj)
+        candidates = _extract_video_url_candidates(obj)
+        if candidates:
+            fallback_candidates = candidates
         if stream:
+            last_debug = _video_debug_summary(obj, stream)
             try:
                 progress = int(stream.get("progress") or 0)
             except (TypeError, ValueError):
                 progress = 0
+            last_progress = progress
             if progress_cb is not None:
                 await progress_cb(progress)
 
@@ -513,14 +602,36 @@ async def _collect_video_segment(
         if attachments and not final_asset_id:
             final_asset_id = attachments[0]
 
+    if not final_url and fallback_candidates:
+        final_url = _absolutize_video_url(fallback_candidates[0])
+        logger.info(
+            "video URL recovered from fallback parser: url={}",
+            final_url,
+        )
+
     if not final_url and final_asset_id:
         final_url = resolve_asset_reference(final_asset_id, "", user_id=None) or ""
 
     if not final_url and final_asset_id:
+        logger.warning(
+            "video segment missing URL but has assetId: asset_id={} post_id={} progress={} candidates={} debug={}",
+            final_asset_id,
+            video_post_id,
+            last_progress,
+            fallback_candidates[:5],
+            last_debug,
+        )
         raise UpstreamError(
             "Video segment returned only assetId without a resolvable URL"
         )
     if not final_url:
+        logger.warning(
+            "video segment missing final URL: post_id={} progress={} candidates={} debug={}",
+            video_post_id,
+            last_progress,
+            fallback_candidates[:5],
+            last_debug,
+        )
         raise UpstreamError("Video generation returned no final video URL")
 
     return _VideoArtifact(
@@ -887,11 +998,34 @@ async def _run_video_job(
             job.video_url = resolved_video_url
             job.content_path = str(path)
             job.remixed_from_video_id = artifact.remixed_from_video_id
+        try:
+            from app.products.tasks import get_media_task_service
+
+            await get_media_task_service().mark_success(
+                job.id,
+                result_url=resolved_video_url,
+            )
+        except Exception as task_exc:
+            logger.warning(
+                "video task success update failed: job_id={} error={}",
+                job.id,
+                task_exc,
+            )
     except Exception as exc:
         logger.exception("video job failed: job_id={} error={}", job.id, exc)
         async with _VIDEO_JOBS_LOCK:
             job.status = "failed"
             job.error = _job_error_payload(str(exc))
+        try:
+            from app.products.tasks import get_media_task_service
+
+            await get_media_task_service().mark_failure(job.id, exc)
+        except Exception as task_exc:
+            logger.warning(
+                "video task failure update failed: job_id={} error={}",
+                job.id,
+                task_exc,
+            )
 
 
 async def create_video(
@@ -928,6 +1062,22 @@ async def create_video(
         quality=_VIDEO_QUALITY,
         created_at=int(time.time()),
     )
+    try:
+        from app.products.tasks import get_media_task_service
+
+        await get_media_task_service().create_task(
+            task_id=job.id,
+            task_type="video",
+            source="videos_api",
+            model=model,
+            endpoint="/v1/videos",
+        )
+    except Exception as task_exc:
+        logger.warning(
+            "video task create failed: job_id={} error={}",
+            job.id,
+            task_exc,
+        )
     await _put_video_job(job)
     asyncio.create_task(
         _run_video_job(

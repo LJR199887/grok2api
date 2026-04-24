@@ -292,12 +292,21 @@ class AccountRefreshService:
         # Infer pool type from live quota data and patch if it changed.
         inferred = infer_pool(windows)  # type: ignore[arg-type]
         pool_patch = inferred if inferred != record.pool else None
+        auto_disable_basic = (
+            inferred == "basic"
+            and get_config("account.refresh.auto_disable_basic_tokens", False)
+        )
         if pool_patch:
             logger.info(
                 "account pool updated from live quota: token={}... previous_pool={} current_pool={}",
                 record.token[:10],
                 record.pool,
                 inferred,
+            )
+        if auto_disable_basic and record.status != AccountStatus.DISABLED:
+            logger.warning(
+                "account auto-disabled after basic quota detection: token={}...",
+                record.token[:10],
             )
 
         from .commands import AccountPatch
@@ -307,6 +316,17 @@ class AccountRefreshService:
                 AccountPatch(
                     token=record.token,
                     pool=pool_patch,
+                    status=AccountStatus.DISABLED if auto_disable_basic else None,
+                    state_reason="auto_disabled_basic_token"
+                    if auto_disable_basic
+                    else None,
+                    ext_merge={
+                        **record.ext,
+                        "disabled_at": now,
+                        "disabled_reason": "auto_disabled_basic_token",
+                    }
+                    if auto_disable_basic
+                    else None,
                     last_sync_at=now_ms() if refreshed else None,
                     usage_sync_delta=1 if refreshed else None,
                     **patches,  # type: ignore[arg-type]
@@ -318,6 +338,7 @@ class AccountRefreshService:
             checked=1,
             refreshed=1 if refreshed else 0,
             failed=0 if refreshed else 1,
+            disabled=1 if auto_disable_basic else 0,
             recovered=1 if (was_cooling and refreshed) else 0,
         )
 

@@ -15,6 +15,7 @@ from app.platform.auth.middleware import verify_api_key
 from app.platform.errors import AppError, ValidationError
 from app.platform.logging.logger import logger
 from app.platform.storage import image_files_dir, video_files_dir
+from app.products.tasks import extract_media_result_url, get_media_task_service
 from app.control.model import registry as model_registry
 from app.control.model.spec import ModelSpec
 from .schemas import (
@@ -256,6 +257,9 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             code="model_not_found",
         )
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
+    task_service = None
+    task = None
+    capture_task_result_url = False
 
     try:
         # Dispatch by model capability.
@@ -264,6 +268,14 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
 
             cfg = req.image_config or ImageConfig()
             _validate_image_edit_n(cfg.n or 1, param="image_config.n")
+            task_service = get_media_task_service()
+            capture_task_result_url = (cfg.response_format or "url").strip().lower() == "url"
+            task = await task_service.create_task(
+                task_type="image",
+                source="chat_completions",
+                model=req.model,
+                endpoint="/v1/chat/completions",
+            )
             result = await img_edit(
                 model=req.model,
                 messages=messages,
@@ -282,6 +294,14 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             fmt = cfg.response_format or "url"
             n = cfg.n or 1
             _validate_image_n(req.model, n, param="image_config.n")
+            task_service = get_media_task_service()
+            capture_task_result_url = fmt.strip().lower() == "url"
+            task = await task_service.create_task(
+                task_type="image",
+                source="chat_completions",
+                model=req.model,
+                endpoint="/v1/chat/completions",
+            )
             # Extract prompt from last user message.
             prompt = next(
                 (
@@ -310,6 +330,14 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             from .video import validate_video_length as _validate_video_length
 
             _validate_video_length(vcfg.seconds or 6)
+            task_service = get_media_task_service()
+            capture_task_result_url = True
+            task = await task_service.create_task(
+                task_type="video",
+                source="chat_completions",
+                model=req.model,
+                endpoint="/v1/chat/completions",
+            )
             result = await vid_comp(
                 model=req.model,
                 messages=messages,
@@ -341,9 +369,13 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
                 request_overrides=request_overrides,
             )
 
-    except AppError:
+    except AppError as exc:
+        if task_service is not None and task is not None:
+            await task_service.mark_failure(task, exc)
         raise
     except Exception as exc:
+        if task_service is not None and task is not None:
+            await task_service.mark_failure(task, exc)
         logger.exception(
             "chat completions endpoint failed: model={} stream={} error={}",
             req.model,
@@ -373,7 +405,20 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
         raise
 
     if isinstance(result, dict):
+        if task_service is not None and task is not None:
+            await task_service.mark_success(
+                task,
+                result_url=extract_media_result_url(result)
+                if capture_task_result_url
+                else None,
+            )
         return JSONResponse(result)
+    if task_service is not None and task is not None:
+        result = task_service.wrap_stream(
+            task,
+            result,
+            capture_result_url=capture_task_result_url,
+        )
     return StreamingResponse(
         _sse_with_heartbeat(_safe_sse(result)),
         media_type="text/event-stream",
@@ -479,15 +524,32 @@ async def image_generations(req: ImageGenerationRequest):
     _validate_image_n(req.model, req.n or 1, param="n")
 
     from .images import generate as img_gen
-
-    result = await img_gen(
+    task_service = get_media_task_service()
+    task = await task_service.create_task(
+        task_type="image",
+        source="images_api",
         model=req.model,
-        prompt=req.prompt,
-        n=req.n or 1,
-        size=req.size or "1024x1024",
-        response_format=req.response_format or "url",
-        stream=False,
-        chat_format=False,
+        endpoint="/v1/images/generations",
+    )
+
+    try:
+        result = await img_gen(
+            model=req.model,
+            prompt=req.prompt,
+            n=req.n or 1,
+            size=req.size or "1024x1024",
+            response_format=req.response_format or "url",
+            stream=False,
+            chat_format=False,
+        )
+    except Exception as exc:
+        await task_service.mark_failure(task, exc)
+        raise
+    await task_service.mark_success(
+        task,
+        result_url=extract_media_result_url(result)
+        if (req.response_format or "url").strip().lower() == "url"
+        else None,
     )
     return JSONResponse(result)
 
@@ -594,14 +656,31 @@ async def image_edits(
         for image_input in image_inputs
     )
     messages = [{"role": "user", "content": content}]
-    result = await img_edit(
+    task_service = get_media_task_service()
+    task = await task_service.create_task(
+        task_type="image",
+        source="images_api",
         model=model,
-        messages=messages,
-        n=n,
-        size=size,
-        response_format=response_format,
-        stream=False,
-        chat_format=False,
+        endpoint="/v1/images/edits",
+    )
+    try:
+        result = await img_edit(
+            model=model,
+            messages=messages,
+            n=n,
+            size=size,
+            response_format=response_format,
+            stream=False,
+            chat_format=False,
+        )
+    except Exception as exc:
+        await task_service.mark_failure(task, exc)
+        raise
+    await task_service.mark_success(
+        task,
+        result_url=extract_media_result_url(result)
+        if response_format.strip().lower() == "url"
+        else None,
     )
     return JSONResponse(result)
 

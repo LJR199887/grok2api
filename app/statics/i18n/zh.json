@@ -19,6 +19,7 @@
   "header": {
     "account": "账户管理",
     "config": "配置管理",
+    "tasks": "任务列表",
     "cache": "缓存管理",
     "languageLabel": "语言",
     "logout": "退出登录",
@@ -34,6 +35,44 @@
     "versionNotesEmpty": "暂无更新说明。",
     "versionOpenRelease": "发布详情",
     "versionClose": "关闭"
+  },
+  "tasks": {
+    "pageTitle": "Grok2API - 任务列表",
+    "title": "任务列表",
+    "subtitle": "监控图片和视频生成任务、耗时、失败日志和公开链接。",
+    "manualRefresh": "刷新",
+    "totalTasks": "总任务",
+    "imageRunning": "图片进行中",
+    "imageSuccess": "图片成功",
+    "imageFailure": "图片失败",
+    "videoRunning": "视频进行中",
+    "videoSuccess": "视频成功",
+    "videoFailure": "视频失败",
+    "filterType": "类型",
+    "filterStatus": "状态",
+    "typeImage": "图片",
+    "typeVideo": "视频",
+    "statusRunning": "进行中",
+    "statusSuccess": "成功",
+    "statusFailure": "失败",
+    "tableType": "类型",
+    "tableSource": "来源",
+    "tableModel": "模型",
+    "tableStatus": "状态",
+    "tableStartedAt": "开始时间",
+    "tableDuration": "耗时/秒",
+    "tableAssetLink": "公开链接",
+    "tableEndpoint": "接口入口",
+    "openAssetLink": "打开",
+    "noTasks": "暂无匹配任务",
+    "failureTitle": "失败详情",
+    "failureLogEmpty": "暂无失败日志",
+    "close": "关闭",
+    "loadSuccess": "已刷新",
+    "loadFailed": "加载任务失败：{message}",
+    "sourceImagesApi": "Images API",
+    "sourceVideosApi": "Videos API",
+    "sourceChat": "Chat Completions"
   },
   "webui": {
     "header": {
@@ -478,6 +517,10 @@
         "usageConcurrency": {
           "label": "刷新并发数",
           "desc": "并发调用 usage 接口刷新额度时允许的最大并行数。"
+        },
+        "autoDisableBasicTokens": {
+          "label": "自动禁用 Basic 账号",
+          "desc": "启用后，配额刷新检测到账号为 Basic 档时会自动禁用，避免继续参与分配。"
         },
         "onDemandMinInterval": {
           "label": "按需刷新间隔（秒）",
