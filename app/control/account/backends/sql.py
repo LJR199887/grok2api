@@ -629,10 +629,20 @@ class SqlAccountRepository:
                     continue
                 pool = item.pool if item.pool in ("basic", "super", "heavy") else "basic"
                 qs   = default_quota_set(pool)
+                existing_row = (await conn.execute(
+                    sa.select(accounts_table).where(accounts_table.c.token == token)
+                )).fetchone()
+                existing = _row_to_record(existing_row) if existing_row else None
+                preserve_disabled = (
+                    existing is not None
+                    and not existing.is_deleted()
+                    and existing.status == AccountStatus.DISABLED
+                    and not item.allow_reactivate
+                )
                 row  = {
                     "token":            token,
                     "pool":             pool,
-                    "status":           "active",
+                    "status":           "disabled" if preserve_disabled else "active",
                     "created_at":       ts,
                     "updated_at":       ts,
                     "deleted_at":       None,   # clear soft-delete on re-import
@@ -645,7 +655,8 @@ class SqlAccountRepository:
                     "usage_use_count":  0,
                     "usage_fail_count": 0,
                     "usage_sync_count": 0,
-                    "ext":              json.dumps(item.ext),
+                    "state_reason":     existing.state_reason if preserve_disabled and existing else None,
+                    "ext":              json.dumps({**existing.ext, **item.ext} if preserve_disabled and existing else item.ext),
                     "revision":         rev,
                 }
                 await conn.execute(self._build_upsert(row))

@@ -357,10 +357,16 @@ def _extract_video_url_candidates(value: Any) -> list[str]:
             for key in (
                 "videoUrl",
                 "video_url",
+                "finalUrl",
+                "final_url",
                 "generatedVideoUrl",
                 "downloadUrl",
                 "mediaUrl",
                 "fileUrl",
+                "contentUrl",
+                "content_url",
+                "playbackUrl",
+                "playback_url",
                 "url",
                 "src",
             ):
@@ -391,6 +397,12 @@ def _video_debug_summary(obj: dict[str, Any], stream: dict[str, Any] | None) -> 
         summary["stream_keys"] = sorted(stream.keys())[:20]
         for key in (
             "videoUrl",
+            "finalUrl",
+            "final_url",
+            "generatedVideoUrl",
+            "downloadUrl",
+            "mediaUrl",
+            "fileUrl",
             "assetId",
             "thumbnailImageUrl",
             "videoPostId",

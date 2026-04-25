@@ -207,16 +207,28 @@ class RedisAccountRepository:
             pool = item.pool if item.pool in ("basic", "super", "heavy") else "basic"
             qs   = default_quota_set(pool)
             ts   = now_ms()
+            key = _record_key(token)
+            existing_hash = await self._r.hgetall(key)
+            existing = self._from_hash(token, existing_hash) if existing_hash else None
+            preserve_disabled = (
+                existing is not None
+                and not existing.is_deleted()
+                and existing.status == AccountStatus.DISABLED
+                and not item.allow_reactivate
+            )
             record = AccountRecord(
                 token    = token,
                 pool     = pool,
+                status   = AccountStatus.DISABLED if preserve_disabled else AccountStatus.ACTIVE,
                 tags     = item.tags,
-                ext      = item.ext,
+                ext      = {**existing.ext, **item.ext} if preserve_disabled and existing else item.ext,
                 quota    = qs.to_dict(),
                 created_at = ts,
                 updated_at = ts,
+                state_reason = existing.state_reason if preserve_disabled and existing else None,
             )
-            key = _record_key(token)
+            if existing and existing.pool != pool:
+                await self._r.srem(_pool_key(existing.pool), token)
             await self._r.hset(key, mapping=self._to_hash(record, rev))
             await self._r.sadd(_pool_key(pool), token)
             await self._r.zadd(_KEY_REV_LOG, {token: rev})

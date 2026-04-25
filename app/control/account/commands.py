@@ -17,6 +17,7 @@ class AccountUpsert(BaseModel):
     pool:  str = "basic"
     tags:  list[str] = Field(default_factory=list)
     ext:   dict[str, Any] = Field(default_factory=dict)
+    allow_reactivate: bool = False
 
 
 class AccountPatch(BaseModel):

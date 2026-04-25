@@ -171,38 +171,54 @@ class LocalAccountRepository:
                 continue
             pool = item.pool if item.pool in ("basic", "super", "heavy") else "basic"
             qs   = default_quota_set(pool)
+            existing_row = conn.execute(
+                f"SELECT * FROM {_TBL} WHERE token = ?",
+                (token,),
+            ).fetchone()
+            existing = self._row_to_record(existing_row) if existing_row else None
+            preserve_disabled = (
+                existing is not None
+                and not existing.is_deleted()
+                and existing.status == AccountStatus.DISABLED
+                and not item.allow_reactivate
+            )
+            status = AccountStatus.DISABLED.value if preserve_disabled else AccountStatus.ACTIVE.value
+            ext = {**existing.ext, **item.ext} if preserve_disabled and existing else item.ext
             conn.execute(
                 f"""
                 INSERT INTO {_TBL} (
                     token, pool, status, created_at, updated_at,
                     tags, quota_auto, quota_fast, quota_expert, quota_heavy, quota_grok_4_3,
                     usage_use_count, usage_fail_count, usage_sync_count,
-                    ext, revision
+                    state_reason, ext, revision
                 ) VALUES (
-                    :token, :pool, 'active', :ts, :ts,
+                    :token, :pool, :status, :ts, :ts,
                     :tags, :qa, :qf, :qe, :qh, :qg,
-                    0, 0, 0, :ext, :rev
+                    0, 0, 0, :state_reason, :ext, :rev
                 )
                 ON CONFLICT(token) DO UPDATE SET
                     pool       = excluded.pool,
-                    status     = 'active',
+                    status     = excluded.status,
                     deleted_at = NULL,
                     updated_at = excluded.updated_at,
                     tags       = excluded.tags,
+                    state_reason = excluded.state_reason,
                     ext        = excluded.ext,
                     revision   = excluded.revision
                 """,
                 {
                     "token": token,
                     "pool":  pool,
+                    "status": status,
                     "ts":    ts,
                     "tags":  json.dumps(item.tags),
+                    "state_reason": existing.state_reason if preserve_disabled and existing else None,
                     "qa":    json.dumps(qs.auto.to_dict()),
                     "qf":    json.dumps(qs.fast.to_dict()),
                     "qe":    json.dumps(qs.expert.to_dict()),
                     "qh":    json.dumps(qs.heavy.to_dict())    if qs.heavy    else "{}",
                     "qg":    json.dumps(qs.grok_4_3.to_dict()) if qs.grok_4_3 else "{}",
-                    "ext":   json.dumps(item.ext),
+                    "ext":   json.dumps(ext),
                     "rev":   revision,
                 },
             )
