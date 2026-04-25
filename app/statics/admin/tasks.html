@@ -18,6 +18,7 @@
     .stat-card{background:#fff;border:1px solid #eee;border-radius:16px;padding:18px;box-shadow:0 8px 26px rgba(20,20,20,.04)}
     .stat-value{font:700 28px/1 "Geist Mono",monospace;letter-spacing:-.03em}
     .stat-label{margin-top:7px;font-size:12px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.04em}
+    .summary-tools{display:flex;justify-content:flex-end;margin:-6px 0 12px}
     .panel{background:rgba(255,255,255,.82);border:1px solid #ededed;border-radius:18px;box-shadow:0 16px 44px rgba(20,20,20,.05);overflow:hidden}
     .toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid #eee}
     .filters{display:flex;flex-wrap:wrap;gap:12px 18px}
@@ -49,7 +50,7 @@
     .dialog-body{padding:20px;background:#fff;border-radius:18px}
     .dialog-title{font-size:16px;font-weight:700}
     .failure-log{margin-top:14px;min-height:150px;max-height:360px;overflow:auto;padding:13px;border:1px solid #eee;border-radius:12px;background:#fafafa;white-space:pre-wrap;word-break:break-word;font:12px/1.6 "Geist Mono",monospace;color:#444}
-    @media(max-width:720px){.page{width:min(100vw - 24px,1180px);padding-top:24px}.page-hd{align-items:flex-start;flex-direction:column}.toolbar{align-items:flex-start}.filters{flex-direction:column}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:720px){.page{width:min(100vw - 24px,1180px);padding-top:24px}.page-hd{align-items:flex-start;flex-direction:column}.toolbar{align-items:flex-start}.filters{flex-direction:column}.summary-tools{justify-content:flex-start}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   </style>
 </head>
 <body>
@@ -65,6 +66,17 @@
   </div>
 
   <section class="summary-grid">
+    <div class="summary-tools" style="grid-column:1/-1">
+      <div class="filter-group">
+        <span class="filter-label" data-i18n="tasks.summaryRange">统计范围</span>
+        <div class="chip-row">
+          <button class="chip active" data-range-filter="today" type="button" data-i18n="tasks.rangeToday">今日</button>
+          <button class="chip" data-range-filter="yesterday" type="button" data-i18n="tasks.rangeYesterday">昨日</button>
+          <button class="chip" data-range-filter="last3" type="button" data-i18n="tasks.rangeLast3">近3天</button>
+          <button class="chip" data-range-filter="last7" type="button" data-i18n="tasks.rangeLast7">近7天</button>
+        </div>
+      </div>
+    </div>
     <div class="stat-card"><div class="stat-value" id="summary-total">0</div><div class="stat-label" data-i18n="tasks.totalTasks">总任务</div></div>
     <div class="stat-card"><div class="stat-value" id="summary-image-running">0</div><div class="stat-label" data-i18n="tasks.imageRunning">图片进行中</div></div>
     <div class="stat-card"><div class="stat-value" id="summary-image-success">0</div><div class="stat-label" data-i18n="tasks.imageSuccess">图片成功</div></div>
@@ -138,7 +150,9 @@ let adminToken = '';
 let loading = false;
 let currentType = 'all';
 let currentStatus = 'all';
+let currentRange = 'today';
 let tasks = [];
+let dailyStats = [];
 
 const text = (key, fallback, params) => {
   if (typeof window.t !== 'function') return fallback;
@@ -172,6 +186,32 @@ function sourceLabel(source) {
     chat_completions: text('tasks.sourceChat', 'Chat Completions'),
   };
   return map[source] || source || '-';
+}
+function emptySummary() {
+  return {
+    total: 0,
+    image: { running: 0, success: 0, failure: 0 },
+    video: { running: 0, success: 0, failure: 0 },
+  };
+}
+function summarizeRange(range) {
+  const stats = Array.isArray(dailyStats) ? dailyStats : [];
+  if (!stats.length) return emptySummary();
+  let selected = [];
+  if (range === 'yesterday') selected = stats.slice(-2, -1);
+  else if (range === 'last3') selected = stats.slice(-3);
+  else if (range === 'last7') selected = stats.slice(-7);
+  else selected = stats.slice(-1);
+  return selected.reduce((acc, item) => {
+    acc.total += item.total || 0;
+    acc.image.running += item.image?.running || 0;
+    acc.image.success += item.image?.success || 0;
+    acc.image.failure += item.image?.failure || 0;
+    acc.video.running += item.video?.running || 0;
+    acc.video.success += item.video?.success || 0;
+    acc.video.failure += item.video?.failure || 0;
+    return acc;
+  }, emptySummary());
 }
 function resultLink(task) {
   const url = String(task?.result_url || '').trim();
@@ -235,7 +275,8 @@ async function loadTasks(showNotice = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const payload = await res.json();
     tasks = Array.isArray(payload.task_list) ? payload.task_list : [];
-    renderSummary(payload.summary_total || {});
+    dailyStats = Array.isArray(payload.daily_stats) ? payload.daily_stats : [];
+    renderSummary(summarizeRange(currentRange));
     renderList();
     if (showNotice) showToast(text('tasks.loadSuccess', '已刷新'), 'success');
   } catch (error) {
@@ -259,6 +300,13 @@ function bindEvents() {
       currentStatus = button.dataset.filterStatus;
       document.querySelectorAll('[data-filter-status]').forEach((item) => item.classList.toggle('active', item === button));
       renderList();
+    });
+  });
+  document.querySelectorAll('[data-range-filter]').forEach((button) => {
+    button.addEventListener('click', () => {
+      currentRange = button.dataset.rangeFilter || 'today';
+      document.querySelectorAll('[data-range-filter]').forEach((item) => item.classList.toggle('active', item === button));
+      renderSummary(summarizeRange(currentRange));
     });
   });
   byId('task-list-body').addEventListener('click', (event) => {

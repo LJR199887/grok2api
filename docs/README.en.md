@@ -256,6 +256,8 @@ Runtime config can also be overridden with `GROK_`-prefixed environment variable
 | :-- | :-- | :-- |
 | `grok-imagine-image-edit` | `auto` | `super` |
 
+> Image editing is aligned with the upstream `imagine-image-edit + toolOverrides.imageGen=true` path. Prefer `/v1/images/edits` with multipart file uploads, or use `/v1/chat/completions` with `image_url` for image-to-image workflows.
+
 ### Video
 
 | Model | mode | tier |
@@ -345,6 +347,32 @@ curl http://localhost:8000/v1/chat/completions \
     ],
     "image_config": {
       "n": 2,
+      "size": "1024x1024",
+      "response_format": "url"
+    }
+  }'
+```
+
+Image edit:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -d '{
+    "model": "grok-imagine-image-edit",
+    "stream": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type":"text","text":"Make this image sharper with a cinematic cyberpunk night look"},
+          {"type":"image_url","image_url":{"url":"https://example.com/input.png"}}
+        ]
+      }
+    ],
+    "image_config": {
+      "n": 1,
       "size": "1024x1024",
       "response_format": "url"
     }
@@ -530,6 +558,17 @@ curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
   -F "model=grok-imagine-image-edit" \
   -F "prompt=Make this image sharper" \
+  -F "image[]=@/path/to/image.png" \
+  -F "n=1" \
+  -F "size=1024x1024" \
+  -F "response_format=url"
+```
+
+```bash
+curl http://localhost:8000/v1/images/edits \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -F "model=grok-imagine-image-edit" \
+  -F "prompt=Make this image sharper with a cinematic cyberpunk night look" \
   -F "image[]=@/path/to/image.png" \
   -F "n=1" \
   -F "size=1024x1024" \

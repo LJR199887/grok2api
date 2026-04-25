@@ -257,6 +257,8 @@ docker compose up -d
 | :-- | :-- | :-- |
 | `grok-imagine-image-edit` | `auto` | `super` |
 
+> 图像编辑已对齐上游 `imagine-image-edit + toolOverrides.imageGen=true` 链路。推荐优先使用 `/v1/images/edits` 的 multipart 文件上传，也可以通过 `/v1/chat/completions` 传 `image_url` 做图生图。
+
 ### Video
 
 | 模型名 | mode | tier |
@@ -346,6 +348,32 @@ curl http://localhost:8000/v1/chat/completions \
     ],
     "image_config": {
       "n": 2,
+      "size": "1024x1024",
+      "response_format": "url"
+    }
+  }'
+```
+
+图像编辑：
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -d '{
+    "model": "grok-imagine-image-edit",
+    "stream": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type":"text","text":"把这张图改成更清晰、更有电影感的赛博朋克夜景"},
+          {"type":"image_url","image_url":{"url":"https://example.com/input.png"}}
+        ]
+      }
+    ],
+    "image_config": {
+      "n": 1,
       "size": "1024x1024",
       "response_format": "url"
     }
@@ -531,6 +559,17 @@ curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
   -F "model=grok-imagine-image-edit" \
   -F "prompt=把这张图变清晰一些" \
+  -F "image[]=@/path/to/image.png" \
+  -F "n=1" \
+  -F "size=1024x1024" \
+  -F "response_format=url"
+```
+
+```bash
+curl http://localhost:8000/v1/images/edits \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -F "model=grok-imagine-image-edit" \
+  -F "prompt=把这张图改成更清晰、更有电影感的赛博朋克夜景" \
   -F "image[]=@/path/to/image.png" \
   -F "n=1" \
   -F "size=1024x1024" \
