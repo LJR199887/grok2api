@@ -277,17 +277,6 @@ When `imgbed.enabled=true`, final generated images and videos are uploaded to Cl
 | :-- | :-- | :-- |
 | `grok-imagine-video` | `auto` | `super` |
 
-### Legacy Model Aliases
-
-For compatibility with older clients, these legacy model names are accepted and mapped to the current model names. The response `model` field usually uses the current model name.
-
-| Legacy Model | Current Model |
-| :-- | :-- |
-| `grok-imagine-1.0` | `grok-imagine-image` |
-| `grok-imagine-1.0-fast` | `grok-imagine-image-lite` |
-| `grok-imagine-1.0-edit` | `grok-imagine-image-edit` |
-| `grok-imagine-1.0-video` | `grok-imagine-video` |
-
 <br>
 
 ## API Overview
@@ -574,7 +563,7 @@ Response example:
 
 | Field | Description |
 | :-- | :-- |
-| `model` | Image model: `grok-imagine-image-lite`, `grok-imagine-image`, or `grok-imagine-image-pro`; legacy names `grok-imagine-1.0`, `grok-imagine-1.0-fast` are also accepted |
+| `model` | Image model: `grok-imagine-image-lite`, `grok-imagine-image`, or `grok-imagine-image-pro` |
 | `prompt` | Image generation prompt |
 | `n` | Number of images; `1-4` for `lite`, `1-10` for other image models |
 | `size` | Supports `1280x720`, `720x1280`, `1792x1024`, `1024x1792`, `1024x1024` |
@@ -625,7 +614,7 @@ The response shape matches text-to-image. With `response_format=url`, read `data
 
 | Field | Description |
 | :-- | :-- |
-| `model` | Image-edit model, currently `grok-imagine-image-edit`; legacy name `grok-imagine-1.0-edit` is also accepted |
+| `model` | Image-edit model, currently `grok-imagine-image-edit` |
 | `prompt` | Edit instruction |
 | `image[]` | Reference image multipart file field; up to 5 images are used |
 | `n` | Number of outputs, range `1-2` |
@@ -727,7 +716,7 @@ When ImgBed is enabled, use `video_url` directly instead of relying on `/content
 
 | Field | Description |
 | :-- | :-- |
-| `model` | Video model, currently `grok-imagine-video`; legacy name `grok-imagine-1.0-video` is also accepted |
+| `model` | Video model, currently `grok-imagine-video` |
 | `prompt` | Video generation prompt |
 | `seconds` | Video length: `6`, `10`, `12`, `16`, `20` |
 | `size` | Supports `720x1280`, `1280x720`, `1024x1024`, `1024x1792`, `1792x1024` |

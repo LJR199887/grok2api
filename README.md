@@ -278,17 +278,6 @@ docker compose up -d
 | :-- | :-- | :-- |
 | `grok-imagine-video` | `auto` | `super` |
 
-### 旧模型名别名
-
-为了兼容旧客户端，以下旧模型名会自动映射到新模型名；响应里的 `model` 字段通常会显示新模型名。
-
-| 旧模型名 | 实际模型名 |
-| :-- | :-- |
-| `grok-imagine-1.0` | `grok-imagine-image` |
-| `grok-imagine-1.0-fast` | `grok-imagine-image-lite` |
-| `grok-imagine-1.0-edit` | `grok-imagine-image-edit` |
-| `grok-imagine-1.0-video` | `grok-imagine-video` |
-
 <br>
 
 ## API 一览
@@ -575,7 +564,7 @@ curl http://localhost:8000/v1/images/generations \
 
 | 字段 | 说明 |
 | :-- | :-- |
-| `model` | 图像模型：`grok-imagine-image-lite`, `grok-imagine-image`, `grok-imagine-image-pro`；旧名 `grok-imagine-1.0`, `grok-imagine-1.0-fast` 也可用 |
+| `model` | 图像模型：`grok-imagine-image-lite`, `grok-imagine-image`, `grok-imagine-image-pro` |
 | `prompt` | 图片生成提示词 |
 | `n` | 生成数量；`lite` 为 `1-4`，其他图像模型为 `1-10` |
 | `size` | 支持 `1280x720`, `720x1280`, `1792x1024`, `1024x1792`, `1024x1024` |
@@ -626,7 +615,7 @@ curl http://localhost:8000/v1/images/edits \
 
 | 字段 | 说明 |
 | :-- | :-- |
-| `model` | 图像编辑模型，目前为 `grok-imagine-image-edit`；旧名 `grok-imagine-1.0-edit` 也可用 |
+| `model` | 图像编辑模型，目前为 `grok-imagine-image-edit` |
 | `prompt` | 编辑指令 |
 | `image[]` | 参考图片，multipart 文件字段；最多使用 5 张 |
 | `n` | 生成数量，范围 `1-2` |
@@ -728,7 +717,7 @@ curl -L http://localhost:8000/v1/videos/<video_id>/content \
 
 | 字段 | 说明 |
 | :-- | :-- |
-| `model` | 视频模型，目前为 `grok-imagine-video`；旧名 `grok-imagine-1.0-video` 也可用 |
+| `model` | 视频模型，目前为 `grok-imagine-video` |
 | `prompt` | 视频生成提示词 |
 | `seconds` | 视频长度：`6`, `10`, `12`, `16`, `20` |
 | `size` | 支持 `720x1280`, `1280x720`, `1024x1024`, `1024x1792`, `1792x1024` |
