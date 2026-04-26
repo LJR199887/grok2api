@@ -218,6 +218,19 @@ docker compose up -d
 | `features.image_format` | `grok_url`, `local_url`, `grok_md`, `local_md`, `base64` |
 | `features.video_format` | `grok_url`, `local_url`, `grok_html`, `local_html` |
 
+### 图床模式
+
+开启 `imgbed.enabled=true` 后，最终生成的图片、视频会先上传到 CloudFlare ImgBed，再把图床公开链接返回给客户端。`base64` / `b64_json` 输出不走图床。
+
+| 配置项 | 说明 |
+| :-- | :-- |
+| `imgbed.enabled` | 是否启用图床模式 |
+| `imgbed.upload_api_url` | ImgBed 实际上传端点，例如 `https://your.domain/upload`，不是文档页 `.../api/upload.html` |
+| `imgbed.auth_code` | CloudFlare ImgBed 后台复制的上传认证码，会作为 `authCode` 查询参数发送 |
+| `imgbed.upload_folder` | 可选上传目录；留空则不传 `uploadFolder` |
+
+> 图床模式下推荐直接使用接口返回的 `url` / `video_url`。异步视频任务完成后不会依赖本地缓存文件，`/v1/videos/{video_id}/content` 主要用于未启用图床模式的本地下载场景。
+
 <br>
 
 ## 模型支持
@@ -264,6 +277,17 @@ docker compose up -d
 | 模型名 | mode | tier |
 | :-- | :-- | :-- |
 | `grok-imagine-video` | `auto` | `super` |
+
+### 旧模型名别名
+
+为了兼容旧客户端，以下旧模型名会自动映射到新模型名；响应里的 `model` 字段通常会显示新模型名。
+
+| 旧模型名 | 实际模型名 |
+| :-- | :-- |
+| `grok-imagine-1.0` | `grok-imagine-image` |
+| `grok-imagine-1.0-fast` | `grok-imagine-image-lite` |
+| `grok-imagine-1.0-edit` | `grok-imagine-image-edit` |
+| `grok-imagine-1.0-video` | `grok-imagine-video` |
 
 <br>
 
@@ -517,6 +541,8 @@ curl http://localhost:8000/v1/messages \
 <summary><code>POST /v1/images/generations</code></summary>
 <br>
 
+文生图：
+
 ```bash
 curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
@@ -530,17 +556,30 @@ curl http://localhost:8000/v1/images/generations \
   }'
 ```
 
+返回示例：
+
+```json
+{
+  "created": 1777188000,
+  "data": [
+    {
+      "url": "https://your-imgbed-domain/file/generated-image.jpg"
+    }
+  ]
+}
+```
+
 <details>
 <summary>字段说明</summary>
 <br>
 
 | 字段 | 说明 |
 | :-- | :-- |
-| `model` | 图像模型：`grok-imagine-image-lite`, `grok-imagine-image`, `grok-imagine-image-pro` |
+| `model` | 图像模型：`grok-imagine-image-lite`, `grok-imagine-image`, `grok-imagine-image-pro`；旧名 `grok-imagine-1.0`, `grok-imagine-1.0-fast` 也可用 |
 | `prompt` | 图片生成提示词 |
 | `n` | 生成数量；`lite` 为 `1-4`，其他图像模型为 `1-10` |
 | `size` | 支持 `1280x720`, `720x1280`, `1792x1024`, `1024x1792`, `1024x1024` |
-| `response_format` | `url` 或 `b64_json` |
+| `response_format` | `url` 或 `b64_json`；图床模式只影响 `url`，不影响 `b64_json` |
 
 <br>
 </details>
@@ -551,6 +590,8 @@ curl http://localhost:8000/v1/images/generations \
 <details>
 <summary><code>POST /v1/images/edits</code></summary>
 <br>
+
+图生图 / 图像编辑：
 
 ```bash
 curl http://localhost:8000/v1/images/edits \
@@ -563,16 +604,21 @@ curl http://localhost:8000/v1/images/edits \
   -F "response_format=url"
 ```
 
+多图参考也使用同一个字段重复传入：
+
 ```bash
 curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
   -F "model=grok-imagine-image-edit" \
   -F "prompt=把这张图改成更清晰、更有电影感的赛博朋克夜景" \
   -F "image[]=@/path/to/image.png" \
+  -F "image[]=@/path/to/second-reference.png" \
   -F "n=1" \
   -F "size=1024x1024" \
   -F "response_format=url"
 ```
+
+返回结构与文生图一致，`response_format=url` 时返回 `data[].url`；开启图床模式后这里就是图床公开链接。
 
 <details>
 <summary>字段说明</summary>
@@ -580,7 +626,7 @@ curl http://localhost:8000/v1/images/edits \
 
 | 字段 | 说明 |
 | :-- | :-- |
-| `model` | 图像编辑模型，目前为 `grok-imagine-image-edit` |
+| `model` | 图像编辑模型，目前为 `grok-imagine-image-edit`；旧名 `grok-imagine-1.0-edit` 也可用 |
 | `prompt` | 编辑指令 |
 | `image[]` | 参考图片，multipart 文件字段；最多使用 5 张 |
 | `n` | 生成数量，范围 `1-2` |
@@ -598,6 +644,10 @@ curl http://localhost:8000/v1/images/edits \
 <summary><code>POST /v1/videos</code></summary>
 <br>
 
+`/v1/videos` 是异步接口。创建任务会立即返回 `id`，然后把这个 `id` 作为 `video_id` 调用 `GET /v1/videos/{video_id}` 轮询；完成后读取 `video_url`。
+
+文生视频：
+
 ```bash
 curl http://localhost:8000/v1/videos \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
@@ -606,18 +656,71 @@ curl http://localhost:8000/v1/videos \
   -F "seconds=10" \
   -F "size=1792x1024" \
   -F "resolution_name=720p" \
+  -F "preset=normal"
+```
+
+图生视频：
+
+```bash
+curl http://localhost:8000/v1/videos \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -F "model=grok-imagine-video" \
+  -F "prompt=让参考图里的主体向镜头走来，电影感运镜" \
+  -F "seconds=10" \
+  -F "size=720x1280" \
+  -F "resolution_name=720p" \
   -F "preset=normal" \
   -F "input_reference[]=@/path/to/reference.png"
 ```
 
+创建任务返回示例：
+
+```json
+{
+  "id": "video_9dcf111ce0174074a0ece97a74be3be2",
+  "object": "video",
+  "created_at": 1777188292,
+  "status": "queued",
+  "model": "grok-imagine-video",
+  "progress": 0,
+  "prompt": "霓虹雨夜街头，电影感慢镜头追拍",
+  "seconds": "10",
+  "size": "1792x1024",
+  "quality": "standard"
+}
+```
+
+查询任务：
+
 ```bash
 curl http://localhost:8000/v1/videos/<video_id> \
   -H "Authorization: Bearer $GROK2API_API_KEY"
+```
 
+完成后返回示例：
+
+```json
+{
+  "id": "video_9dcf111ce0174074a0ece97a74be3be2",
+  "object": "video",
+  "created_at": 1777188292,
+  "status": "completed",
+  "model": "grok-imagine-video",
+  "progress": 100,
+  "completed_at": 1777188342,
+  "video_url": "https://your-imgbed-domain/file/generated_video.mp4"
+}
+```
+
+未启用图床模式并需要下载本地缓存文件时，可以使用：
+
+```bash
 curl -L http://localhost:8000/v1/videos/<video_id>/content \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
   -o result.mp4
 ```
+
+开启图床模式后，推荐直接使用 `video_url`，不要依赖 `/content` 本地下载。
 
 <details>
 <summary>字段说明</summary>
@@ -625,14 +728,15 @@ curl -L http://localhost:8000/v1/videos/<video_id>/content \
 
 | 字段 | 说明 |
 | :-- | :-- |
-| `model` | 视频模型，目前为 `grok-imagine-video` |
+| `model` | 视频模型，目前为 `grok-imagine-video`；旧名 `grok-imagine-1.0-video` 也可用 |
 | `prompt` | 视频生成提示词 |
 | `seconds` | 视频长度：`6`, `10`, `12`, `16`, `20` |
 | `size` | 支持 `720x1280`, `1280x720`, `1024x1024`, `1024x1792`, `1792x1024` |
 | `resolution_name` | `480p` 或 `720p` |
 | `preset` | `fun`, `normal`, `spicy`, `custom` |
 | `input_reference[]` | 可选图生视频参考图，multipart 文件字段；最多使用前 5 张 |
-| `video_id` | `POST /v1/videos` 返回的视频任务 ID，用于查询任务或下载成片 |
+| `video_id` | `POST /v1/videos` 返回的视频任务 ID，用于查询任务 |
+| `video_url` | 任务完成后的最终视频地址；图床模式下为图床公开链接 |
 
 <br>
 </details>

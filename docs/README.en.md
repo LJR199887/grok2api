@@ -217,6 +217,19 @@ Runtime config can also be overridden with `GROK_`-prefixed environment variable
 | `features.image_format` | `grok_url`, `local_url`, `grok_md`, `local_md`, `base64` |
 | `features.video_format` | `grok_url`, `local_url`, `grok_html`, `local_html` |
 
+### ImgBed Mode
+
+When `imgbed.enabled=true`, final generated images and videos are uploaded to CloudFlare ImgBed before the response is returned. The response then contains the ImgBed public URL. `base64` / `b64_json` outputs do not use ImgBed.
+
+| Config | Description |
+| :-- | :-- |
+| `imgbed.enabled` | Enable ImgBed upload mode |
+| `imgbed.upload_api_url` | The real ImgBed upload endpoint, for example `https://your.domain/upload`; do not use the docs page `.../api/upload.html` |
+| `imgbed.auth_code` | Upload auth code copied from CloudFlare ImgBed; sent as the `authCode` query parameter |
+| `imgbed.upload_folder` | Optional upload folder; omitted when empty |
+
+> In ImgBed mode, use the returned `url` / `video_url` directly. Async video jobs do not rely on local cached files after completion; `/v1/videos/{video_id}/content` is mainly for local-download mode when ImgBed is disabled.
+
 <br>
 
 ## Supported Models
@@ -263,6 +276,17 @@ Runtime config can also be overridden with `GROK_`-prefixed environment variable
 | Model | mode | tier |
 | :-- | :-- | :-- |
 | `grok-imagine-video` | `auto` | `super` |
+
+### Legacy Model Aliases
+
+For compatibility with older clients, these legacy model names are accepted and mapped to the current model names. The response `model` field usually uses the current model name.
+
+| Legacy Model | Current Model |
+| :-- | :-- |
+| `grok-imagine-1.0` | `grok-imagine-image` |
+| `grok-imagine-1.0-fast` | `grok-imagine-image-lite` |
+| `grok-imagine-1.0-edit` | `grok-imagine-image-edit` |
+| `grok-imagine-1.0-video` | `grok-imagine-video` |
 
 <br>
 
@@ -516,6 +540,8 @@ curl http://localhost:8000/v1/messages \
 <summary><code>POST /v1/images/generations</code></summary>
 <br>
 
+Text-to-image:
+
 ```bash
 curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
@@ -529,17 +555,30 @@ curl http://localhost:8000/v1/images/generations \
   }'
 ```
 
+Response example:
+
+```json
+{
+  "created": 1777188000,
+  "data": [
+    {
+      "url": "https://your-imgbed-domain/file/generated-image.jpg"
+    }
+  ]
+}
+```
+
 <details>
 <summary>Field Notes</summary>
 <br>
 
 | Field | Description |
 | :-- | :-- |
-| `model` | Image model: `grok-imagine-image-lite`, `grok-imagine-image`, or `grok-imagine-image-pro` |
+| `model` | Image model: `grok-imagine-image-lite`, `grok-imagine-image`, or `grok-imagine-image-pro`; legacy names `grok-imagine-1.0`, `grok-imagine-1.0-fast` are also accepted |
 | `prompt` | Image generation prompt |
 | `n` | Number of images; `1-4` for `lite`, `1-10` for other image models |
 | `size` | Supports `1280x720`, `720x1280`, `1792x1024`, `1024x1792`, `1024x1024` |
-| `response_format` | `url` or `b64_json` |
+| `response_format` | `url` or `b64_json`; ImgBed mode only affects `url`, not `b64_json` |
 
 <br>
 </details>
@@ -550,6 +589,8 @@ curl http://localhost:8000/v1/images/generations \
 <details>
 <summary><code>POST /v1/images/edits</code></summary>
 <br>
+
+Image-to-image / image edit:
 
 ```bash
 curl http://localhost:8000/v1/images/edits \
@@ -562,16 +603,21 @@ curl http://localhost:8000/v1/images/edits \
   -F "response_format=url"
 ```
 
+For multiple reference images, repeat the same field:
+
 ```bash
 curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
   -F "model=grok-imagine-image-edit" \
   -F "prompt=Make this image sharper with a cinematic cyberpunk night look" \
   -F "image[]=@/path/to/image.png" \
+  -F "image[]=@/path/to/second-reference.png" \
   -F "n=1" \
   -F "size=1024x1024" \
   -F "response_format=url"
 ```
+
+The response shape matches text-to-image. With `response_format=url`, read `data[].url`; in ImgBed mode this is the ImgBed public URL.
 
 <details>
 <summary>Field Notes</summary>
@@ -579,7 +625,7 @@ curl http://localhost:8000/v1/images/edits \
 
 | Field | Description |
 | :-- | :-- |
-| `model` | Image-edit model, currently `grok-imagine-image-edit` |
+| `model` | Image-edit model, currently `grok-imagine-image-edit`; legacy name `grok-imagine-1.0-edit` is also accepted |
 | `prompt` | Edit instruction |
 | `image[]` | Reference image multipart file field; up to 5 images are used |
 | `n` | Number of outputs, range `1-2` |
@@ -597,6 +643,10 @@ curl http://localhost:8000/v1/images/edits \
 <summary><code>POST /v1/videos</code></summary>
 <br>
 
+`/v1/videos` is asynchronous. Create a job first, then use the returned `id` as `video_id` and poll `GET /v1/videos/{video_id}` until it returns `status=completed`; the final video URL is in `video_url`.
+
+Text-to-video:
+
 ```bash
 curl http://localhost:8000/v1/videos \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
@@ -605,18 +655,71 @@ curl http://localhost:8000/v1/videos \
   -F "seconds=10" \
   -F "size=1792x1024" \
   -F "resolution_name=720p" \
+  -F "preset=normal"
+```
+
+Image-to-video:
+
+```bash
+curl http://localhost:8000/v1/videos \
+  -H "Authorization: Bearer $GROK2API_API_KEY" \
+  -F "model=grok-imagine-video" \
+  -F "prompt=Make the subject in the reference image walk toward the camera with cinematic motion" \
+  -F "seconds=10" \
+  -F "size=720x1280" \
+  -F "resolution_name=720p" \
   -F "preset=normal" \
   -F "input_reference[]=@/path/to/reference.png"
 ```
 
+Create response example:
+
+```json
+{
+  "id": "video_9dcf111ce0174074a0ece97a74be3be2",
+  "object": "video",
+  "created_at": 1777188292,
+  "status": "queued",
+  "model": "grok-imagine-video",
+  "progress": 0,
+  "prompt": "A neon rainy street at night, cinematic slow tracking shot",
+  "seconds": "10",
+  "size": "1792x1024",
+  "quality": "standard"
+}
+```
+
+Poll the job:
+
 ```bash
 curl http://localhost:8000/v1/videos/<video_id> \
   -H "Authorization: Bearer $GROK2API_API_KEY"
+```
 
+Completed response example:
+
+```json
+{
+  "id": "video_9dcf111ce0174074a0ece97a74be3be2",
+  "object": "video",
+  "created_at": 1777188292,
+  "status": "completed",
+  "model": "grok-imagine-video",
+  "progress": 100,
+  "completed_at": 1777188342,
+  "video_url": "https://your-imgbed-domain/file/generated_video.mp4"
+}
+```
+
+When ImgBed is disabled and you need the local cached file, use:
+
+```bash
 curl -L http://localhost:8000/v1/videos/<video_id>/content \
   -H "Authorization: Bearer $GROK2API_API_KEY" \
   -o result.mp4
 ```
+
+When ImgBed is enabled, use `video_url` directly instead of relying on `/content`.
 
 <details>
 <summary>Field Notes</summary>
@@ -624,14 +727,15 @@ curl -L http://localhost:8000/v1/videos/<video_id>/content \
 
 | Field | Description |
 | :-- | :-- |
-| `model` | Video model, currently `grok-imagine-video` |
+| `model` | Video model, currently `grok-imagine-video`; legacy name `grok-imagine-1.0-video` is also accepted |
 | `prompt` | Video generation prompt |
 | `seconds` | Video length: `6`, `10`, `12`, `16`, `20` |
 | `size` | Supports `720x1280`, `1280x720`, `1024x1024`, `1024x1792`, `1792x1024` |
 | `resolution_name` | `480p` or `720p` |
 | `preset` | `fun`, `normal`, `spicy`, `custom` |
 | `input_reference[]` | Optional image-to-video reference multipart file field; at most the first 5 images are used |
-| `video_id` | Video job ID returned by `POST /v1/videos`; used to retrieve the job or download the final video |
+| `video_id` | Video job ID returned by `POST /v1/videos`; used to retrieve the job |
+| `video_url` | Final video URL when the job is completed; in ImgBed mode this is the ImgBed public URL |
 
 <br>
 </details>
