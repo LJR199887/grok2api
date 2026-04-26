@@ -267,6 +267,7 @@ async def generate(
     """
     cfg          = get_config()
     spec         = resolve_model(model)
+    model        = spec.model_name
     aspect_ratio = resolve_aspect_ratio(size)
     enable_nsfw  = cfg.get_bool("features.enable_nsfw", True)
 
@@ -1020,6 +1021,7 @@ async def edit(
     """Edit images via media/post/create + imagine-image-edit chat payload."""
     cfg = get_config()
     spec = resolve_model(model)
+    model = spec.model_name
     timeout_s = cfg.get_float("chat.timeout", 120.0)
     if not (1 <= n <= _EDIT_MAX_N):
         raise ValidationError("image edit n must be between 1 and 2", param="n")

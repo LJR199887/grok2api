@@ -61,6 +61,12 @@ MODELS: tuple[ModelSpec, ...] = (
 # ---------------------------------------------------------------------------
 
 _BY_NAME: dict[str, ModelSpec] = {m.model_name: m for m in MODELS}
+_ALIASES: dict[str, str] = {
+    "grok-imagine-1.0": "grok-imagine-image",
+    "grok-imagine-1.0-fast": "grok-imagine-image-lite",
+    "grok-imagine-1.0-edit": "grok-imagine-image-edit",
+    "grok-imagine-1.0-video": "grok-imagine-video",
+}
 
 _BY_CAP: dict[int, list[ModelSpec]] = {}
 for _m in MODELS:
@@ -72,14 +78,19 @@ for _m in MODELS:
 # ---------------------------------------------------------------------------
 
 
+def canonical_name(model_name: str) -> str:
+    """Return the registered model name for a public model alias."""
+    return _ALIASES.get(model_name, model_name)
+
+
 def get(model_name: str) -> ModelSpec | None:
     """Return the spec for *model_name*, or ``None`` if not registered."""
-    return _BY_NAME.get(model_name)
+    return _BY_NAME.get(canonical_name(model_name))
 
 
 def resolve(model_name: str) -> ModelSpec:
     """Return the spec for *model_name*; raise ``ValueError`` if unknown."""
-    spec = _BY_NAME.get(model_name)
+    spec = get(model_name)
     if spec is None:
         raise ValueError(f"Unknown model: {model_name!r}")
     return spec
@@ -95,4 +106,11 @@ def list_by_capability(cap: Capability) -> list[ModelSpec]:
     return [m for m in MODELS if m.enabled and bool(m.capability & cap)]
 
 
-__all__ = ["MODELS", "get", "resolve", "list_enabled", "list_by_capability"]
+__all__ = [
+    "MODELS",
+    "canonical_name",
+    "get",
+    "resolve",
+    "list_enabled",
+    "list_by_capability",
+]

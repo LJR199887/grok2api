@@ -226,6 +226,7 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             param="model",
             code="model_not_found",
         )
+    model_name = spec.model_name
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
     task_service = None
     task = None
@@ -243,11 +244,11 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             task = await task_service.create_task(
                 task_type="image",
                 source="chat_completions",
-                model=req.model,
+                model=model_name,
                 endpoint="/v1/chat/completions",
             )
             result = await img_edit(
-                model=req.model,
+                model=model_name,
                 messages=messages,
                 n=cfg.n or 1,
                 size=cfg.size or "1024x1024",
@@ -263,13 +264,13 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             size = cfg.size or "1024x1024"
             fmt = cfg.response_format or "url"
             n = cfg.n or 1
-            _validate_image_n(req.model, n, param="image_config.n")
+            _validate_image_n(model_name, n, param="image_config.n")
             task_service = get_media_task_service()
             capture_task_result_url = fmt.strip().lower() == "url"
             task = await task_service.create_task(
                 task_type="image",
                 source="chat_completions",
-                model=req.model,
+                model=model_name,
                 endpoint="/v1/chat/completions",
             )
             # Extract prompt from last user message.
@@ -284,7 +285,7 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
                 "",
             )
             result = await img_gen(
-                model=req.model,
+                model=model_name,
                 prompt=prompt or "",
                 n=n,
                 size=size,
@@ -305,11 +306,11 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             task = await task_service.create_task(
                 task_type="video",
                 source="chat_completions",
-                model=req.model,
+                model=model_name,
                 endpoint="/v1/chat/completions",
             )
             result = await vid_comp(
-                model=req.model,
+                model=model_name,
                 messages=messages,
                 stream=is_stream,
                 seconds=vcfg.seconds or 6,
@@ -325,7 +326,7 @@ async def chat_completions_endpoint(req: ChatCompletionRequest):
             else:
                 emit_think = req.reasoning_effort != "none"
             result = await chat_completions(
-                model=req.model,
+                model=model_name,
                 messages=messages,
                 stream=is_stream,
                 emit_think=emit_think,
@@ -480,20 +481,21 @@ async def image_generations(req: ImageGenerationRequest):
         raise ValidationError(
             f"Model {req.model!r} is not an image model", param="model"
         )
-    _validate_image_n(req.model, req.n or 1, param="n")
+    model_name = spec.model_name
+    _validate_image_n(model_name, req.n or 1, param="n")
 
     from .images import generate as img_gen
     task_service = get_media_task_service()
     task = await task_service.create_task(
         task_type="image",
         source="images_api",
-        model=req.model,
+        model=model_name,
         endpoint="/v1/images/generations",
     )
 
     try:
         result = await img_gen(
-            model=req.model,
+            model=model_name,
             prompt=req.prompt,
             n=req.n or 1,
             size=req.size or "1024x1024",
@@ -598,6 +600,7 @@ async def image_edits(
         raise ValidationError(
             f"Model {model!r} is not an image-edit model", param="model"
         )
+    model_name = spec.model_name
     if mask is not None:
         raise ValidationError("mask is not supported yet", param="mask")
     _validate_image_edit_n(n, param="n")
@@ -619,12 +622,12 @@ async def image_edits(
     task = await task_service.create_task(
         task_type="image",
         source="images_api",
-        model=model,
+        model=model_name,
         endpoint="/v1/images/edits",
     )
     try:
         result = await img_edit(
-            model=model,
+            model=model_name,
             messages=messages,
             n=n,
             size=size,

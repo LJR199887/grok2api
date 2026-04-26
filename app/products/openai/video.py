@@ -1054,6 +1054,7 @@ async def create_video(
     spec = model_registry.get(model)
     if spec is None or not spec.enabled or not spec.is_video():
         raise ValidationError(f"Model {model!r} is not a video model", param="model")
+    model = spec.model_name
 
     cleaned_prompt = (prompt or "").strip()
     if not cleaned_prompt:
