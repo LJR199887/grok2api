@@ -977,7 +977,8 @@ async def _run_video_job(
             )
             raw, _mime = await _download_video_bytes(token, artifact.video_url)
             resolved_video_url = artifact.video_url
-            if is_imgbed_enabled():
+            use_imgbed = is_imgbed_enabled()
+            if use_imgbed:
                 resolved_video_url = await upload_bytes_to_imgbed(
                     filename_from_url(artifact.video_url, "video"),
                     raw,
@@ -1002,13 +1003,13 @@ async def _run_video_job(
             else:
                 asyncio.create_task(_fail_sync(token, int(spec.mode_id), fail_exc))
 
-        path = _save_video_bytes(raw, job.id)
+        path = None if use_imgbed else _save_video_bytes(raw, job.id)
         async with _VIDEO_JOBS_LOCK:
             job.status = "completed"
             job.progress = 100
             job.completed_at = int(time.time())
             job.video_url = resolved_video_url
-            job.content_path = str(path)
+            job.content_path = str(path) if path is not None else ""
             job.remixed_from_video_id = artifact.remixed_from_video_id
         try:
             from app.products.tasks import get_media_task_service
